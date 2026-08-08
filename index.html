@@ -261,8 +261,8 @@ body.kopia .row .main{width:100%}
 
 /* fotnot */
 .foot{
-  margin:2px 0 0;
-  padding:0 var(--pad) calc(env(safe-area-inset-bottom) + 22px);
+  margin:0;
+  padding:10px var(--pad) calc(env(safe-area-inset-bottom) + 26px);
   text-align:center;font-size:11px;font-weight:500;color:var(--muted);
   letter-spacing:.02em;
 }
@@ -506,12 +506,24 @@ body.las #dBetyg:not(.harbetyg){display:none}
 .cell.warn .l{color:var(--alarm)}
 
 /* ---------- list ---------- */
+/* Knapparna delar bredden lika och krymper hellre sin luft än att
+   hamna utanför skärmen. gap och padding följer skärmbredden, så en
+   smal telefon får tätare knappar i stället för en rad som svämmar över. */
 .tools{
-  padding:14px var(--pad) 8px;display:flex;gap:7px;
-  overflow-x:auto;-webkit-overflow-scrolling:touch;
+  padding:14px var(--pad) 8px;
+  display:flex;gap:clamp(4px, 1.4vw, 8px);
+  align-items:stretch;
 }
-.tools::-webkit-scrollbar{display:none}
-.tools button{flex:none}
+.tools button{
+  /* 1 1 auto, inte 1 1 0: knapparna fyller bredden men behåller sina
+     inbördes proportioner, så "I lager" inte tar lika mycket som
+     "Sortera · Ny in" och klipper den i onödan. */
+  flex:1 1 auto;
+  min-width:0;                 /* utan den vägrar flexboxen krympa texten */
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
 #btnSort.pa{border-color:var(--cork);color:var(--cork)}
 
 /* Filtrera-knappen ligger kvar längst ner i panelen medan man bläddrar
@@ -521,12 +533,17 @@ body.las #dBetyg:not(.harbetyg){display:none}
   box-shadow:0 6px 22px rgba(0,0,0,.45);
 }
 .tools button{
-  padding:9px 17px;border-radius:11px;border:1px solid var(--line);
-  background:var(--stone);color:var(--muted);font-size:14px;
+  padding:9px clamp(3px, 2.2vw, 16px);
+  border-radius:11px;border:1px solid var(--line);
+  background:var(--stone);color:var(--muted);
+  font-size:clamp(11px, 3.4vw, 14px);
 }
 .tools button[aria-pressed="true"]{color:var(--chalk);border-color:var(--verdigris)}
 
-.list{padding:0 var(--pad) calc(env(safe-area-inset-bottom) + 104px)}
+/* Fotnoten ligger under listan och bär själv marginalen mot gestfältet.
+   Listan hade kvar 104 px från när den var sist på sidan, och det blev
+   ett stort tomrum mitt emellan. */
+.list{padding:0 var(--pad) 10px}
 .row{
   display:flex;gap:12px;align-items:center;
   padding:13px 0;border-bottom:1px solid var(--line);
@@ -1658,7 +1675,7 @@ pwaByggMask();
 pwaProvaManifestfil();
 
 /* ---------- lagring ---------- */
-const APP_VERSION = "v67";
+const APP_VERSION = "v68";
 
 /* Här skrivs vinlistan in när en offlinekopia byggs. I originalfilen står
    den kvar som null, och då beter sig sidan precis som vanligt. */
@@ -2264,12 +2281,13 @@ $("btnAngra").onclick = async () => {
 /* ---------- sortering ---------- */
 
 const SORT = [
-  { k:"namn",      namn:"Bokstavsordning", stigande:true  },
-  { k:"senasteIn", namn:"Senast inlagd",   stigande:false },
-  { k:"senasteUt", namn:"Senast uttagen",  stigande:false },
-  { k:"pris",      namn:"Pris",            stigande:false },
-  { k:"betyg",     namn:"Betyg",           stigande:false },
-  { k:"plats",     namn:"Hylla",           stigande:true  },
+  // kort: vad som får plats på knappen bredvid tre andra på en telefon
+  { k:"namn",      namn:"Bokstavsordning", kort:"A–Ö",   stigande:true  },
+  { k:"senasteIn", namn:"Senast inlagd",   kort:"Ny in", stigande:false },
+  { k:"senasteUt", namn:"Senast uttagen",  kort:"Ny ut", stigande:false },
+  { k:"pris",      namn:"Pris",            kort:"Pris",  stigande:false },
+  { k:"betyg",     namn:"Betyg",           kort:"Betyg", stigande:false },
+  { k:"plats",     namn:"Hylla",           kort:"Hylla", stigande:true  },
 ];
 
 let sortK = "namn";
@@ -2310,7 +2328,11 @@ function ritaSort(){
   const f = SORT.find(x => x.k === sortK) || SORT[0];
   const neutral = sortK === "namn" && sortStigande;
   $("btnSort").classList.toggle("pa", !neutral);
-  $("btnSort").textContent = neutral ? "Sortera" : "Sortera: " + f.namn;
+  // Bara en prick, inte sorteringens namn: fem knappar med "Sortera · Ny in"
+  // får inte plats på en telefon, och då klipps texten i stället. Vilken
+  // sortering som gäller står i panelen, och knappen är färgmarkerad.
+  $("btnSort").textContent = neutral ? "Sortera" : "Sortera •";
+  $("btnSort").title = neutral ? "Sortera" : "Sorterat på " + f.namn;
 }
 
 $("btnSort").onclick = () => { ritaSort(); openSheet("shSort"); };
