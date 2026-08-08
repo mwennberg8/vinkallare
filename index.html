@@ -259,6 +259,19 @@ body.kopia .row .main{width:100%}
 .hrad.tryck:active{background:var(--stone)}
 .hrad .hgo{flex:none;color:var(--line);font-size:19px;line-height:1;margin-left:-4px}
 
+/* fotnot */
+.foot{
+  margin:2px 0 0;
+  padding:0 var(--pad) calc(env(safe-area-inset-bottom) + 22px);
+  text-align:center;font-size:11px;font-weight:500;color:var(--muted);
+  letter-spacing:.02em;
+}
+.foot .pil{opacity:.45;margin:0 5px}
+.foot .live{color:var(--verdigris-lit)}
+.foot .av{color:var(--sediment-lit)}
+/* Kopian och läsläget har egen rad högst upp — fotnoten ska inte skrika. */
+body.kopia .foot,body.las .foot{opacity:.7}
+
 /* installationsstatus */
 .pwarader{margin-top:14px;font-size:13px;line-height:1.7;color:var(--muted)}
 .pwarader b{color:var(--chalk);font-weight:600}
@@ -829,6 +842,7 @@ textarea{min-height:74px;resize:vertical}
 <div class="chips" id="chips"></div>
 
 <main class="list" id="list"></main>
+<div class="foot" id="foot"></div>
 
 <div class="scrim" id="scrim"></div>
 
@@ -1644,7 +1658,7 @@ pwaByggMask();
 pwaProvaManifestfil();
 
 /* ---------- lagring ---------- */
-const APP_VERSION = "v66";
+const APP_VERSION = "v67";
 
 /* Här skrivs vinlistan in när en offlinekopia byggs. I originalfilen står
    den kvar som null, och då beter sig sidan precis som vanligt. */
@@ -1900,6 +1914,54 @@ function visaStartFel(text){
 }
 
 $("startToken").onkeydown = ev => { if (ev.key === "Enter") $("startSpara").click(); };
+
+/**
+ * Fotnoten: var datan kommer ifrån, om den är färsk, och när något
+ * senast rörde sig i källaren.
+ *
+ * Tre saker man annars måste gissa sig till. Vilken väg som används
+ * spelar roll när något krånglar — "molnet" förklarar varför det är
+ * långsamt, "lokalt" att man är hemma.
+ */
+function vilkenVag(){
+  if (OFFLINE_DATA && offline) return "kopia";
+  if (basSomFungerar === null) return null;
+  if (basSomFungerar === "") return "sidans adress";
+  if (basSomFungerar === credMoln()) return "molnet";
+  if (/homeylocal\.com/.test(basSomFungerar)) return "lokalt";
+  if (basSomFungerar === credLan()) return "lokalt";
+  return "annan adress";
+}
+
+/** Senaste rörelsen i källaren, inte senaste hämtningen. */
+function senasteAndring(){
+  let ts = 0;
+  for (const w of wines) {
+    for (const t of [w.senasteIn, w.senasteUt]) {
+      if (t && t > ts) ts = t;
+    }
+  }
+  return ts || null;
+}
+
+function ritaFoot(){
+  const bitar = [];
+
+  const vag = vilkenVag();
+  if (vag) bitar.push(esc(vag));
+
+  bitar.push(offline
+    ? '<span class="av">offline</span>'
+    : '<span class="live">live</span>');
+
+  const andrad = senasteAndring();
+  if (andrad) bitar.push("ändrad " + esc(tidText(andrad)));
+  else if (wines.length) bitar.push("inga rörelser än");
+
+  bitar.push(esc(APP_VERSION));
+
+  $("foot").innerHTML = bitar.join('<span class="pil">·</span>');
+}
 
 /* ---------- offline ---------- */
 
@@ -2543,6 +2605,8 @@ function renderList(){
 
   rows.sort(jamfor);
 
+  try { ritaFoot(); } catch(e){}
+
   const el = $("list");
   if (!rows.length) {
     el.innerHTML = '<div class="empty"><strong>'
@@ -2655,6 +2719,9 @@ async function refresh(){
     $("list").innerHTML = '<div class="empty"><strong>Ingen kontakt med Homey</strong>'
       + esc(e.message) + '<br>Kontrollera adress och token under Inställningar.</div>';
     renderStats();
+    // Listan ritas inte om här, så fotnoten måste ritas för hand — annars
+    // står den tom just när den behövs som mest.
+    try { visaOffline(true, cacheTid); ritaFoot(); } catch(err){}
   }
 }
 
