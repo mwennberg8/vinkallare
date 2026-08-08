@@ -259,6 +259,19 @@ body.kopia .row .main{width:100%}
 .hrad.tryck:active{background:var(--stone)}
 .hrad .hgo{flex:none;color:var(--line);font-size:19px;line-height:1;margin-left:-4px}
 
+/* installationsstatus */
+.pwarader{margin-top:14px;font-size:13px;line-height:1.7;color:var(--muted)}
+.pwarader b{color:var(--chalk);font-weight:600}
+.pwarader code{
+  font-size:12px;background:var(--stone);border:1px solid var(--line);
+  border-radius:5px;padding:1px 5px;
+}
+.pwarader .ja{color:var(--verdigris-lit);font-weight:800}
+.pwarader .nej{color:var(--sediment-lit);font-weight:800}
+.pwarader .klar{color:var(--verdigris-lit);font-weight:600}
+.pwarader .varn{color:var(--sediment-lit)}
+.pwarader p{margin:8px 0 0}
+
 /* startskärm */
 .start{
   position:fixed;inset:0;z-index:80;background:var(--ink);
@@ -1023,6 +1036,14 @@ textarea{min-height:74px;resize:vertical}
     </div>
   </details>
 
+  <details class="sekt" id="sektApp">
+    <summary>Installera som app<span class="hint" id="hintApp"></span></summary>
+    <div class="sektkropp">
+      <button class="btn ghost" id="sInstall" type="button">Installera</button>
+      <div class="pwarader" id="pwaRader"></div>
+    </div>
+  </details>
+
   <details class="sekt" id="sektAdmin">
     <summary>Admin<span class="hint" id="hintAdmin"></span></summary>
     <div class="sektkropp">
@@ -1365,12 +1386,141 @@ function pwaProvaManifestfil(){
   } catch(e){}
 }
 
+/**
+ * Installation som riktig app.
+ *
+ * Chrome skickar beforeinstallprompt bara när allt är på plats, och
+ * händelsen måste sparas — den går inte att framkalla i efterhand.
+ * Menyvägen "Lägg till på startskärmen" ger på många telefoner en
+ * GENVÄG i stället för en app, och en genväg behåller adressfältet.
+ * Knappen här nedanför är därför den enda pålitliga vägen.
+ */
+let _pwaVantar = null;
+
+window.addEventListener("beforeinstallprompt", ev => {
+  ev.preventDefault();
+  _pwaVantar = ev;
+  try { ritaPwa(); } catch(e){}
+});
+
+window.addEventListener("appinstalled", () => {
+  _pwaVantar = null;
+  try { ritaPwa(); } catch(e){}
+});
+
+function pwaSomApp(){
+  try {
+    return (window.matchMedia && window.matchMedia("(display-mode:standalone)").matches)
+        || (window.matchMedia && window.matchMedia("(display-mode:fullscreen)").matches)
+        || window.navigator.standalone === true;
+  } catch(e){ return false; }
+}
+
+function pwaKoll(){
+  // isSecureContext saknas i äldre webbvyer — då avgörs det på adressen i
+  // stället, efter samma regel som Chrome använder.
+  let sak;
+  try { sak = window.isSecureContext; } catch(e){}
+  if (typeof sak !== "boolean") {
+    try {
+      const v = (location.hostname || "").replace(/^\[|\]$/g, "");
+      sak = location.protocol === "https:"
+         || v === "localhost" || v === "127.0.0.1" || v === "::1";
+    } catch(e){ sak = false; }
+  }
+
+  const man = window._pwaManifest || null;
+  const ikoner = man ? (man.icons || []) : [];
+  return {
+    sak,
+    app: pwaSomApp(),
+    man: !!document.querySelector('link[rel="manifest"]'),
+    namn: !!(man && man.name),
+    ikon: ikoner.some(i => i.sizes === "192x192")
+       && ikoner.some(i => i.sizes === "512x512"),
+    disp: !!(man && man.display === "standalone"),
+    fraga: !!_pwaVantar,
+    proto: location.protocol,
+    origin: location.origin,
+  };
+}
+
+function ritaPwa(){
+  const c = pwaKoll();
+  const rad = (ok, t) => '<div><span class="' + (ok ? "ja" : "nej") + '">'
+    + (ok ? "✓" : "✗") + '</span> ' + t + '</div>';
+
+  const knapp = $("sInstall");
+  knapp.textContent = c.app ? "Redan installerad"
+    : (c.fraga ? "Installera" : "Uppdatera status");
+  knapp.disabled = c.app;
+  $("hintApp").textContent = c.app ? "installerad" : (c.fraga ? "redo" : "");
+
+  if (c.app) {
+    $("pwaRader").innerHTML =
+      '<div class="klar">Körs som app — adressfältet är borta.</div>';
+    return;
+  }
+
+  let h = rad(c.sak, "Säker kontext (" + esc(c.proto.replace(":", "")) + ")")
+    + rad(c.man && c.namn, "Manifest med namnet Vinkällaren")
+    + rad(c.ikon, "Ikoner 192 och 512 px")
+    + rad(c.disp, "Öppnas utan adressfält (standalone)")
+    + rad(c.fraga, "Chrome erbjuder installation");
+
+  if (!c.sak) {
+    h += '<p>Det är <b>bara</b> första punkten som fattas. Chrome installerar inte '
+      + 'sidor som nås över vanlig http mot ett lokalt namn eller IP. '
+      + 'Lägg sidan på <b>https</b> — GitHub Pages fungerar direkt.</p>';
+  } else if (!c.fraga) {
+    h += '<p>Allt annat är på plats. Chrome väntar ibland på att du använt sidan '
+      + 'en stund. Tryck <b>Uppdatera status</b> igen om en minut.</p>';
+  } else {
+    h += '<p>Allt är klart. Får du <b>ändå kvar adressfältet</b> efter installationen '
+      + 'blev ikonen en <b>genväg</b> och inte en app — vissa telefoner faller tillbaka '
+      + 'på det. Kolla under Androids <b>Inställningar → Appar</b>: står '
+      + '<b>Vinkällaren</b> i listan är det en riktig app. Saknas den, ta bort ikonen, '
+      + 'ladda om sidan och använd knappen här — inte <i>Skapa genväg</i>.</p>';
+  }
+
+  h += '<p style="opacity:.75">Manifest: '
+    + (window._pwaFil ? "<b>manifest.webmanifest</b> (fil bredvid sidan)"
+                      : "inbäddat i sidan") + '.</p>';
+
+  if (window._pwaFilFel) {
+    const F = window._pwaFilFel;
+    h += '<p class="varn"><b>manifest.webmanifest används inte.</b> Dess '
+      + '<code>start_url</code> pekar på <code>' + esc(F.pekar || "?") + '</code> '
+      + 'men sidan ligger på <code>'
+      + esc(location.href.split("#")[0].split("?")[0]) + '</code>. Öppnar appen fel '
+      + 'adress hamnar man i en vanlig flik med adressfält, så det inbäddade '
+      + 'manifestet används i stället.<br>Rätta med antingen: döp om HTML-filen till '
+      + '<code>index.html</code>, eller ändra i filen till <code>"start_url": "'
+      + esc(F.borde) + '"</code> och <code>"scope": "./"</code>.</p>';
+  }
+
+  $("pwaRader").innerHTML = h;
+}
+
+$("sInstall").onclick = () => {
+  if (_pwaVantar) {
+    _pwaVantar.prompt();
+    const svar = _pwaVantar.userChoice;
+    if (svar && svar.finally) {
+      svar.finally(() => { _pwaVantar = null; ritaPwa(); });
+    }
+    return;
+  }
+  // Ingen sparad fråga: rita om så man ser vad som fattas.
+  ritaPwa();
+};
+
 pwaByggManifest();
 pwaByggMask();
 pwaProvaManifestfil();
 
 /* ---------- lagring ---------- */
-const APP_VERSION = "v62";
+const APP_VERSION = "v63";
 
 /* Här skrivs vinlistan in när en offlinekopia byggs. I originalfilen står
    den kvar som null, och då beter sig sidan precis som vanligt. */
@@ -4222,6 +4372,7 @@ $("sSave").onclick = async () => {
 $("btnSettings").onclick = () => {
   $("ver").textContent = "Vinkällaren " + APP_VERSION;
   ritaAdmin();
+  ritaPwa();
   // Historiken behövs för att kunna räkna ändringar sedan kopian hämtades.
   if (!histAllt.length && !offline) {
     api("/log?n=300").then(r => {
