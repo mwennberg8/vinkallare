@@ -1363,7 +1363,12 @@ function pwaProvaManifestfil(){
         try { mal = new URL(j.start_url || "./", adress).href.split("#")[0].split("?")[0]; }
         catch(e){ mal = null; }
 
-        if (mal !== sida) {
+        // "katalog/" och "katalog/index.html" är samma resurs — en webbserver
+        // serverar index.html på katalogadressen. En rak strängjämförelse
+        // avvisar därför ett manifest som pekar helt rätt.
+        const likställ = u => String(u || "").replace(/\/index\.html$/, "/");
+
+        if (likställ(mal) !== likställ(sida)) {
           window._pwaFilFel = { fil:adress, pekar:mal,
                                 borde: sida.substring(katalog.length) || "./" };
           return;
@@ -1520,7 +1525,7 @@ pwaByggMask();
 pwaProvaManifestfil();
 
 /* ---------- lagring ---------- */
-const APP_VERSION = "v63";
+const APP_VERSION = "v64";
 
 /* Här skrivs vinlistan in när en offlinekopia byggs. I originalfilen står
    den kvar som null, och då beter sig sidan precis som vanligt. */
