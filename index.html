@@ -1039,6 +1039,9 @@ textarea{min-height:74px;resize:vertical}
   <details class="sekt" id="sektApp">
     <summary>Installera som app<span class="hint" id="hintApp"></span></summary>
     <div class="sektkropp">
+      <p class="sub">Går knappen inte att använda fungerar Chromes meny
+        <b>⋮ → Installera app</b> lika bra — resultatet blir samma app utan
+        adressfält.</p>
       <button class="btn ghost" id="sInstall" type="button">Installera</button>
       <div class="pwarader" id="pwaRader"></div>
       <button class="btn ghost" id="sSond" type="button">Kontrollera i detalj</button>
@@ -1529,10 +1532,14 @@ async function pwaSond(){
       + '<code>icon-192.png</code>, <code>icon-512.png</code> och '
       + '<code>icon-mask-512.png</code> ligger i samma mapp som sidan.</p>');
   } else if (!sw) {
-    rader.push('<p class="varn">Ikonerna är i ordning. Då är service worker '
-      + 'det som återstår — Chrome kräver en registrerad service worker med '
-      + 'en fetch-hanterare för att erbjuda installation. Lägg '
-      + '<code>sw.js</code> bredvid sidan.</p>');
+    rader.push('<p>Ikonerna är i ordning. Service worker saknas, och det är '
+      + 'därför knappen ovanför inte kan användas — <code>beforeinstallprompt</code> '
+      + 'skickas bara när det finns en fetch-hanterare.</p>'
+      + '<p><b>Men appen går att installera ändå:</b> Chromes meny '
+      + '<b>⋮ → Installera app</b> fungerar utan service worker sedan '
+      + 'version 108. Resultatet blir samma sak — en app utan adressfält.</p>'
+      + '<p>Lägger du en <code>sw.js</code> bredvid sidan börjar knappen '
+      + 'fungera, och sidan öppnar sig dessutom utan nät.</p>');
   }
 
   ut.innerHTML = rader.join("");
@@ -1566,8 +1573,13 @@ function ritaPwa(){
       + 'sidor som nås över vanlig http mot ett lokalt namn eller IP. '
       + 'Lägg sidan på <b>https</b> — GitHub Pages fungerar direkt.</p>';
   } else if (!c.fraga) {
-    h += '<p>Allt annat är på plats. Chrome väntar ibland på att du använt sidan '
-      + 'en stund. Tryck <b>Uppdatera status</b> igen om en minut.</p>';
+    h += '<p>Allt annat är på plats. Att den sista punkten står kvar hindrar '
+      + '<b>inte</b> installation — det betyder bara att knappen här inte kan '
+      + 'användas. Installera via Chromes meny <b>⋮ → Installera app</b> i '
+      + 'stället; den vägen kräver ingen service worker sedan Chrome 108.</p>'
+      + '<p>Vill du ha knappen att fungera behövs en <code>sw.js</code> bredvid '
+      + 'sidan. Chrome skickar <code>beforeinstallprompt</code> bara när det '
+      + 'finns en fetch-hanterare. Den ger också ett riktigt offline-läge.</p>';
   } else {
     h += '<p>Allt är klart. Får du <b>ändå kvar adressfältet</b> efter installationen '
       + 'blev ikonen en <b>genväg</b> och inte en app — vissa telefoner faller tillbaka '
@@ -1632,7 +1644,7 @@ pwaByggMask();
 pwaProvaManifestfil();
 
 /* ---------- lagring ---------- */
-const APP_VERSION = "v65";
+const APP_VERSION = "v66";
 
 /* Här skrivs vinlistan in när en offlinekopia byggs. I originalfilen står
    den kvar som null, och då beter sig sidan precis som vanligt. */
