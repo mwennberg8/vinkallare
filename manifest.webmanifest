@@ -1,0 +1,39 @@
+{
+  "id": "./index.html#vinkallaren",
+  "name": "Vinkällaren",
+  "short_name": "Vinkällaren",
+  "description": "Vinkällarens innehåll, sökbart och sorterbart",
+  "start_url": "./index.html",
+  "scope": "./",
+  "lang": "sv",
+  "dir": "ltr",
+  "display": "standalone",
+  "display_override": [
+    "standalone",
+    "minimal-ui"
+  ],
+  "orientation": "any",
+  "prefer_related_applications": false,
+  "background_color": "#0F1214",
+  "theme_color": "#4A1526",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-mask-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
