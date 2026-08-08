@@ -1041,6 +1041,8 @@ textarea{min-height:74px;resize:vertical}
     <div class="sektkropp">
       <button class="btn ghost" id="sInstall" type="button">Installera</button>
       <div class="pwarader" id="pwaRader"></div>
+      <button class="btn ghost" id="sSond" type="button">Kontrollera i detalj</button>
+      <div class="pwarader" id="pwaSond"></div>
     </div>
   </details>
 
@@ -1450,6 +1452,92 @@ function pwaKoll(){
   };
 }
 
+/**
+ * Hämta ikonerna på riktigt.
+ *
+ * Att manifestet DEKLARERAR 192 och 512 säger ingenting om att filerna
+ * finns. Laddas de inte underkänner Chrome installationen utan att säga
+ * något — och min tidigare kontroll bockade av punkten ändå, vilket är
+ * precis det som gör ett fel svårt att hitta.
+ */
+async function pwaProvaIkoner(){
+  const man = window._pwaManifest;
+  if (!man || !man.icons) return [];
+  const bas = document.querySelector('link[rel="manifest"]');
+  const mot = bas ? bas.href : location.href;
+
+  return Promise.all(man.icons.map(async ik => {
+    let url = ik.src;
+    try { url = new URL(ik.src, mot).href; } catch(e){}
+    if (/^data:/.test(url)) return { ik, ok:true, not:"inbäddad" };
+    try {
+      const r = await fetch(url, { cache:"no-store" });
+      if (!r.ok) return { ik, ok:false, not:"HTTP " + r.status };
+      const typ = r.headers.get("content-type") || "";
+      if (!/image/.test(typ) && typ) return { ik, ok:false, not:"fel typ: " + typ };
+      return { ik, ok:true, not:"" };
+    } catch(e){ return { ik, ok:false, not:"gick inte att hämta" }; }
+  }));
+}
+
+async function pwaSond(){
+  const ut = $("pwaSond");
+  ut.innerHTML = '<p>Kontrollerar…</p>';
+  const rader = [];
+
+  // 1. ikonerna
+  const ikoner = await pwaProvaIkoner();
+  for (const r of ikoner) {
+    rader.push('<div><span class="' + (r.ok ? "ja" : "nej") + '">'
+      + (r.ok ? "✓" : "✗") + '</span> Ikon ' + esc(r.ik.sizes || "?")
+      + ' ' + esc(r.ik.purpose || "any")
+      + (r.not ? ' <span style="opacity:.7">(' + esc(r.not) + ')</span>' : "") + '</div>');
+  }
+  if (!ikoner.length) rader.push('<div><span class="nej">✗</span> Manifestet saknar ikoner</div>');
+
+  // 2. service worker — Chrome kräver den i flera versioner
+  let sw = null;
+  try {
+    if (navigator.serviceWorker) {
+      const reg = await navigator.serviceWorker.getRegistration();
+      sw = reg ? (reg.active ? "aktiv" : "registrerad, inte aktiv") : null;
+    }
+  } catch(e){}
+  rader.push('<div><span class="' + (sw ? "ja" : "nej") + '">' + (sw ? "✓" : "✗")
+    + '</span> Service worker' + (sw ? ' (' + esc(sw) + ')' : " saknas") + '</div>');
+
+  // 3. redan installerad enligt Chrome?
+  try {
+    if (navigator.getInstalledRelatedApps) {
+      const appar = await navigator.getInstalledRelatedApps();
+      if (appar && appar.length) {
+        rader.push('<div><span class="nej">!</span> Chrome ser '
+          + appar.length + ' installerad app för den här adressen — '
+          + 'då frågar den inte igen.</div>');
+      }
+    }
+  } catch(e){}
+
+  rader.push('<p style="opacity:.7">Manifestets adress: <code>'
+    + esc((document.querySelector('link[rel="manifest"]') || {}).href || "saknas")
+    + '</code></p>');
+
+  const trasig = ikoner.some(r => !r.ok);
+  if (trasig) {
+    rader.push('<p class="varn">En eller flera ikoner går inte att hämta. '
+      + 'Chrome underkänner installationen utan att säga till. Kontrollera att '
+      + '<code>icon-192.png</code>, <code>icon-512.png</code> och '
+      + '<code>icon-mask-512.png</code> ligger i samma mapp som sidan.</p>');
+  } else if (!sw) {
+    rader.push('<p class="varn">Ikonerna är i ordning. Då är service worker '
+      + 'det som återstår — Chrome kräver en registrerad service worker med '
+      + 'en fetch-hanterare för att erbjuda installation. Lägg '
+      + '<code>sw.js</code> bredvid sidan.</p>');
+  }
+
+  ut.innerHTML = rader.join("");
+}
+
 function ritaPwa(){
   const c = pwaKoll();
   const rad = (ok, t) => '<div><span class="' + (ok ? "ja" : "nej") + '">'
@@ -1507,6 +1595,25 @@ function ritaPwa(){
   $("pwaRader").innerHTML = h;
 }
 
+$("sSond").onclick = () => { pwaSond(); };
+
+/**
+ * Registrera service worker när en sw.js ligger bredvid sidan.
+ *
+ * Krävs av Chrome för att erbjuda installation, och ger dessutom det
+ * riktiga offline-läget: med den cachad öppnar sidan sig utan nät.
+ * Saknas filen händer ingenting — sidan fungerar som förut.
+ */
+(function(){
+  if (!("serviceWorker" in navigator)) return;
+  if (location.protocol !== "https:" && location.hostname !== "localhost") return;
+  const katalog = location.href.split("#")[0].split("?")[0]
+    .replace(/[^/]*$/, "");
+  navigator.serviceWorker.register(katalog + "sw.js", { scope: katalog })
+    .then(() => { try { ritaPwa(); } catch(e){} })
+    .catch(() => {});   // ingen sw.js — helt i sin ordning
+})();
+
 $("sInstall").onclick = () => {
   if (_pwaVantar) {
     _pwaVantar.prompt();
@@ -1525,7 +1632,7 @@ pwaByggMask();
 pwaProvaManifestfil();
 
 /* ---------- lagring ---------- */
-const APP_VERSION = "v64";
+const APP_VERSION = "v65";
 
 /* Här skrivs vinlistan in när en offlinekopia byggs. I originalfilen står
    den kvar som null, och då beter sig sidan precis som vanligt. */
