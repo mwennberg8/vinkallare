@@ -435,9 +435,14 @@ body.las #dBetyg:not(.harbetyg){display:none}
 .qnamn.vantar{font-family:var(--body);font-size:12.5px;color:var(--muted);font-weight:400}
 .qnamn.miss{font-family:var(--body);font-size:12.5px;color:var(--alarm);font-weight:400}
 .qfalt{display:grid;grid-template-columns:64px 1fr;gap:6px}
-.qfalt input{
+.qfalt input,.qfalt select{
   background:var(--ink);border:1px solid var(--line);border-radius:8px;
   padding:8px 9px;font-size:14px;width:100%;
+  -webkit-appearance:none;appearance:none;
+  /* Egen pil: standardpilen är ljus och syns knappt mot den mörka rutan. */
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23948B7E' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 9px center;
+  padding-right:24px;
 }
 .qdel{
   width:34px;height:34px;border-radius:9px;border:1px solid var(--line);
@@ -636,6 +641,12 @@ label{display:block;font-size:12px;color:var(--muted);margin:12px 0 5px;
 input[type=text],input[type=number],textarea,select{
   width:100%;background:var(--ink);border:1px solid var(--line);
   border-radius:10px;padding:12px 13px;color:var(--chalk);
+}
+select{
+  -webkit-appearance:none;appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='7'%3E%3Cpath d='M1 1l4.5 4.5L10 1' stroke='%23948B7E' stroke-width='1.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 13px center;
+  padding-right:32px;
 }
 textarea{min-height:74px;resize:vertical}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -951,7 +962,7 @@ textarea{min-height:74px;resize:vertical}
   <div class="three">
     <div><label for="wFran">Drick från</label><input type="number" id="wFran" inputmode="numeric"></div>
     <div><label for="wTill">Drick till</label><input type="number" id="wTill" inputmode="numeric"></div>
-    <div><label for="wPlats">Plats</label><input type="number" id="wPlats" inputmode="numeric" min="1" step="1" placeholder="Hylla"></div>
+    <div><label for="wPlats">Plats</label><select id="wPlats"></select></div>
   </div>
   <div class="two">
     <div><label for="wVolym">Volym (ml)</label><input type="number" id="wVolym" inputmode="numeric"></div>
@@ -1675,7 +1686,7 @@ pwaByggMask();
 pwaProvaManifestfil();
 
 /* ---------- lagring ---------- */
-const APP_VERSION = "v68";
+const APP_VERSION = "v69";
 
 /* Här skrivs vinlistan in när en offlinekopia byggs. I originalfilen står
    den kvar som null, och då beter sig sidan precis som vanligt. */
@@ -2201,6 +2212,30 @@ function rack(w){
        + '</div>';
 }
 
+const HYLLOR = 10;
+
+/**
+ * Bygg valen till en hyllista.
+ *
+ * Hyllorna är numrerade 1–10. Ett äldre värde som inte finns bland dem —
+ * en textplats som "Rack B", eller en hylla utanför intervallet — läggs
+ * till längst ned. Utan det skulle det tyst raderas så fort man sparade
+ * något annat på vinet.
+ */
+function hyllVal(valt){
+  const v = valt === null || valt === undefined ? "" : String(valt);
+  let ut = '<option value="">Ingen plats</option>';
+  for (let i = 1; i <= HYLLOR; i++) {
+    ut += '<option value="' + i + '"' + (v === String(i) ? " selected" : "")
+       + '>Hylla ' + i + '</option>';
+  }
+  const iListan = /^\d+$/.test(v) && Number(v) >= 1 && Number(v) <= HYLLOR;
+  if (v && !iListan) {
+    ut += '<option value="' + esc(v) + '" selected>' + esc(v) + '</option>';
+  }
+  return ut;
+}
+
 function platsText(w){
   if (w.plats === null || w.plats === undefined || w.plats === "") return "";
   return /^\d+$/.test(String(w.plats)) ? "Hylla " + w.plats : String(w.plats);
@@ -2450,7 +2485,9 @@ function renderChips(){
   if (filter.inteNu) bitar.push(['<b>Inte nu</b>', "inteNu", ""]);
   for (const f of FFALT) {
     for (const v of filter[f.k]) {
-      bitar.push(['<b>' + esc(f.namn) + '</b> ' + esc(v), f.k, v]);
+      // Chippet ska säga samma sak som filterknappen: "Hylla 7", inte "7".
+      bitar.push(['<b>' + esc(f.namn) + '</b> '
+        + esc(f.k === "plats" ? platsText({ plats:v }) : v), f.k, v]);
     }
   }
   c.innerHTML = bitar.length
@@ -2519,7 +2556,8 @@ function renderFilterPanel(){
       + varden.map(([v, n]) =>
         '<button data-k="' + f.k + '" data-v="' + esc(v) + '" type="button" aria-pressed="'
         + filter[f.k].some(x => String(x) === String(v)) + '">'
-        + esc(v) + ' <i>' + n + '</i></button>').join("")
+        + esc(f.k === "plats" ? platsText({ plats:v }) : v)
+        + ' <i>' + n + '</i></button>').join("")
       + '</div></div>';
   }
 
@@ -3663,6 +3701,9 @@ function editWine(w, isNew){
   $("wSub").textContent = isNew
     ? "Antal är hur många flaskor du ställer in nu."
     : "Ändringar sparas direkt i Homey.";
+  // Hyllistan byggs om varje gång: ett äldre värde som inte finns bland
+  // valen läggs till, annars vore det borta så fort man sparade.
+  $("wPlats").innerHTML = hyllVal(w.plats);
   for (const [el, key] of Object.entries(F)) $(el).value = w[key] ?? "";
   valtBetyg = w.betyg || null;
   ritaStjarnor($("wBetyg"), valtBetyg);
@@ -3675,7 +3716,10 @@ $("wSave").onclick = async () => {
   const body = {};
   for (const [el, key] of Object.entries(F)) {
     const v = $(el).value.trim();
-    if (["argang","pris","antal","drickFran","drickTill","volym","alkohol","plats"].includes(key)) {
+    if (key === "plats") {
+      // En textplats får inte bli NaN på vägen ut.
+      body.plats = v === "" ? "" : (/^\d+$/.test(v) ? Number(v) : v);
+    } else if (["argang","pris","antal","drickFran","drickTill","volym","alkohol"].includes(key)) {
       body[key] = v === "" ? null : Number(v);
     } else {
       body[key] = v;
@@ -4027,9 +4071,7 @@ function serieRender(){
       + '<div class="qmid">' + namn + varning
         + '<div class="qfalt">'
           + '<input class="qantal" type="number" inputmode="numeric" min="0" value="' + (f.antal || 1) + '" aria-label="Antal">'
-          + '<input class="qplats" type="number" inputmode="numeric" min="1" step="1"'
-            + ' value="' + esc(f.plats === null || f.plats === undefined ? "" : f.plats)
-            + '" placeholder="Hylla" aria-label="Plats">'
+          + '<select class="qplats" aria-label="Plats">' + hyllVal(f.plats) + '</select>'
         + '</div>'
       + '</div>'
       + '<button class="qdel" data-del="' + i + '" type="button" aria-label="Ta bort">×</button>'
