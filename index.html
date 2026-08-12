@@ -259,6 +259,28 @@ body.kopia .row .main{width:100%}
 .hrad.tryck:active{background:var(--stone)}
 .hrad .hgo{flex:none;color:var(--line);font-size:19px;line-height:1;margin-left:-4px}
 
+/* bekräftelseruta */
+.popskarm{
+  position:fixed;inset:0;z-index:90;
+  background:rgba(8,10,11,.72);
+  display:flex;align-items:center;justify-content:center;
+  padding:var(--pad);
+}
+.pop{
+  position:relative;width:100%;max-width:340px;
+  background:var(--stone);border:1px solid var(--line);border-radius:18px;
+  padding:22px 20px 18px;
+  box-shadow:0 20px 60px rgba(0,0,0,.55);
+}
+.pop h3{
+  font-family:var(--display);font-size:20px;font-weight:600;
+  letter-spacing:-.01em;margin:0 6px 8px 0;padding-right:30px;
+}
+.pop .sub{margin:0}
+.pop .stang{top:12px;right:11px;width:30px;height:30px;font-size:17px}
+.popknappar{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:20px}
+.popknappar .btn{margin:0}
+
 /* fotnot */
 .foot{
   margin:0;
@@ -873,6 +895,18 @@ textarea{min-height:74px;resize:vertical}
 <div class="foot" id="foot"></div>
 
 <div class="scrim" id="scrim"></div>
+
+<div class="popskarm" id="popSkarm" hidden>
+  <div class="pop" role="dialog" aria-modal="true" aria-labelledby="popTitel">
+    <button class="stang" id="popX" type="button" aria-label="Stäng">×</button>
+    <h3 id="popTitel">Ångra uttag?</h3>
+    <p class="sub" id="popText"></p>
+    <div class="popknappar">
+      <button class="btn ghost" id="popNej" type="button">Avbryt</button>
+      <button class="btn primary" id="popJa" type="button">Ångra</button>
+    </div>
+  </div>
+</div>
 
 <!-- wine detail -->
 <section class="sheet" id="shDet" aria-hidden="true">
@@ -1686,7 +1720,7 @@ pwaByggMask();
 pwaProvaManifestfil();
 
 /* ---------- lagring ---------- */
-const APP_VERSION = "v69";
+const APP_VERSION = "v70";
 
 /* Här skrivs vinlistan in när en offlinekopia byggs. I originalfilen står
    den kvar som null, och då beter sig sidan precis som vanligt. */
@@ -2302,7 +2336,63 @@ async function visaAngra(){
   } catch(e){ $("btnAngra").hidden = true; }
 }
 
+/**
+ * Bekräftelseruta.
+ *
+ * Följer husets mönster: kryss uppe till höger, stängs vid tryck utanför,
+ * och auto-stängs efter 30 sekunders tystnad så en glömd ruta inte ligger
+ * kvar och väntar på ett svar.
+ */
+let popSvar = null;
+let popTimer = null;
+
+function fraga({ titel, text, ja = "Ja", nej = "Avbryt" }){
+  $("popTitel").textContent = titel;
+  $("popText").textContent = text || "";
+  $("popText").hidden = !text;
+  $("popJa").textContent = ja;
+  $("popNej").textContent = nej;
+  $("popSkarm").hidden = false;
+
+  clearTimeout(popTimer);
+  popTimer = setTimeout(() => popStang(false), 30000);
+
+  return new Promise(res => { popSvar = res; });
+}
+
+function popStang(svar){
+  clearTimeout(popTimer);
+  $("popSkarm").hidden = true;
+  const f = popSvar;
+  popSvar = null;
+  if (f) f(svar);
+}
+
+$("popJa").onclick = () => popStang(true);
+$("popNej").onclick = () => popStang(false);
+$("popX").onclick = () => popStang(false);
+$("popSkarm").onclick = ev => { if (ev.target === $("popSkarm")) popStang(false); };
+document.addEventListener("keydown", ev => {
+  if (ev.key === "Escape" && !$("popSkarm").hidden) popStang(false);
+});
+
 $("btnAngra").onclick = async () => {
+  // Hämta om kandidaten först — knappen kan ha stått kvar sedan något
+  // annat hände, och då vore det fel rörelse man ångrade.
+  let k = null;
+  try { k = (await api("/angra")).kandidat; } catch(e){}
+  if (!k) { toast("Inget att ångra längre", "warn"); await visaAngra(); return; }
+
+  const vad = k.typ === "ut" ? "uttaget" : "inlägget";
+  const vin = k.namn + (k.argang ? " " + k.argang : "");
+  const svar = await fraga({
+    titel: k.typ === "ut" ? "Ångra uttaget?" : "Ångra inlägget?",
+    text: "Flaskan " + (k.typ === "ut" ? "läggs tillbaka" : "tas bort") + " i lagret. "
+        + "Gäller " + vad + " av " + vin + ".",
+    ja: "Ångra",
+  });
+  if (!svar) return;
+
   busy(true, "Ångrar…");
   try {
     const r = await api("/angra", { method:"POST" });
