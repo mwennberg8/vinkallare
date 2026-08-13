@@ -1121,6 +1121,7 @@ textarea{min-height:74px;resize:vertical}
       <button class="btn ghost" id="sInstall" type="button">Installera</button>
       <div class="pwarader" id="pwaRader"></div>
       <button class="btn ghost" id="sSond" type="button">Kontrollera i detalj</button>
+      <button class="btn ghost" id="sNoll" type="button">Töm cachen och börja om</button>
       <div class="pwarader" id="pwaSond"></div>
     </div>
   </details>
@@ -1583,7 +1584,23 @@ async function pwaSond(){
     }
   } catch(e){}
   rader.push('<div><span class="' + (sw ? "ja" : "nej") + '">' + (sw ? "✓" : "✗")
-    + '</span> Service worker' + (sw ? ' (' + esc(sw) + ')' : " saknas") + '</div>');
+    + '</span> Service worker' + (sw ? ' (' + esc(sw) + ')' : " saknas")
+    + ' <span style="opacity:.7">— ' + esc(swLage) + '</span></div>');
+
+  // Vad ligger faktiskt i cachen? Utan den siffran vet man inte om sidan
+  // verkligen går att öppna offline eller bara ser ut att göra det.
+  try {
+    const namn = await caches.keys();
+    let filer = 0;
+    for (const n of namn) {
+      const c = await caches.open(n);
+      filer += (await c.keys()).length;
+    }
+    rader.push('<div><span class="' + (filer ? "ja" : "nej") + '">'
+      + (filer ? "✓" : "✗") + '</span> ' + filer
+      + ' fil(er) i cachen' + (namn.length ? ' (' + esc(namn.join(", ")) + ')' : "")
+      + '</div>');
+  } catch(e){}
 
   // 3. redan installerad enligt Chrome?
   try {
@@ -1685,22 +1702,55 @@ function ritaPwa(){
 
 $("sSond").onclick = () => { pwaSond(); };
 
+$("sNoll").onclick = async () => {
+  const svar = await fraga({
+    titel: "Töm cachen?",
+    text: "Den sparade kopian av sidan raderas och service workern "
+        + "avregistreras. Dina viner och inställningar rörs inte. "
+        + "Ladda om sidan efteråt.",
+    ja: "Töm",
+  });
+  if (!svar) return;
+  busy(true, "Tömmer…");
+  const n = await swNollstall();
+  busy(false);
+  toast(n ? n + " cache(r) tömda — ladda om sidan" : "Inget att tömma", "good");
+  try { pwaSond(); } catch(e){}
+};
+
 /**
- * Registrera service worker när en sw.js ligger bredvid sidan.
+ * Registrera service worker.
  *
- * Krävs av Chrome för att erbjuda installation, och ger dessutom det
- * riktiga offline-läget: med den cachad öppnar sidan sig utan nät.
- * Saknas filen händer ingenting — sidan fungerar som förut.
+ * Ger två saker: sidan går att öppna helt utan nät, och Chrome skickar
+ * beforeinstallprompt så installationsknappen fungerar.
+ *
+ * Registreras bara där den kan göra nytta — på https, och inte i
+ * dashboardens ram (ramen har sin egen). Misslyckas den händer ingenting;
+ * sidan fungerar precis som förut, bara utan offlinestöd. Därför inget
+ * larm om den uteblir.
+ *
+ * sw.js hämtas alltid färskt (updateViaCache:"none"). Annars kan en gammal
+ * service worker ligga kvar i webbläsarens egen cache i timmar och
+ * fortsätta servera det den tycker.
  */
-(function(){
-  if (!("serviceWorker" in navigator)) return;
-  if (location.protocol !== "https:" && location.hostname !== "localhost") return;
-  const katalog = location.href.split("#")[0].split("?")[0]
-    .replace(/[^/]*$/, "");
-  navigator.serviceWorker.register(katalog + "sw.js", { scope: katalog })
-    .then(() => { try { ritaPwa(); } catch(e){} })
-    .catch(() => {});   // ingen sw.js — helt i sin ordning
-})();
+/**
+ * Töm cachen och avregistrera.
+ *
+ * Behövs när något fastnat: en trasig sida i cachen serveras annars glatt
+ * varje gång man är offline, och då hjälper det inte att ladda om.
+ */
+async function swNollstall(){
+  let bort = 0;
+  try {
+    const namn = await caches.keys();
+    for (const n of namn) { if (await caches.delete(n)) bort++; }
+  } catch(e){}
+  try {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    for (const r of regs) await r.unregister();
+  } catch(e){}
+  return bort;
+}
 
 $("sInstall").onclick = () => {
   if (_pwaVantar) {
@@ -1720,11 +1770,40 @@ pwaByggMask();
 pwaProvaManifestfil();
 
 /* ---------- lagring ---------- */
-const APP_VERSION = "v70";
+const APP_VERSION = "v71";
 
 /* Här skrivs vinlistan in när en offlinekopia byggs. I originalfilen står
    den kvar som null, och då beter sig sidan precis som vanligt. */
 let OFFLINE_DATA = null; /*__OFFLINEDATA__*/
+
+let swLage = "inte försökt";
+
+(function swStarta(){
+  try {
+    if (!("serviceWorker" in navigator)) { swLage = "stöds inte"; return; }
+    // Ram och kopia först: de har ingen nytta av en egen service worker
+    // oavsett protokoll, och då är "kräver https" ett missvisande svar.
+    if (iRam()) { swLage = "hoppar över i ram"; return; }
+    if (OFFLINE_DATA) { swLage = "hoppar över i kopia"; return; }
+    if (location.protocol !== "https:" && location.hostname !== "localhost"
+        && location.hostname !== "127.0.0.1") {
+      swLage = "kräver https";
+      return;
+    }
+
+    const katalog = location.href.split("#")[0].split("?")[0].replace(/[^/]*$/, "");
+    navigator.serviceWorker
+      .register(katalog + "sw.js", { scope: katalog, updateViaCache: "none" })
+      .then(reg => {
+        swLage = "registrerad";
+        // Leta efter en nyare version varje gång sidan öppnas.
+        try { reg.update(); } catch(e){}
+        try { ritaPwa(); } catch(e){}
+      })
+      .catch(e => { swLage = "misslyckades: " + (e && e.message || "okänt"); });
+  } catch(e){ swLage = "fel: " + (e && e.message || "okänt"); }
+})();
+
 
 /**
  * Inga hemligheter i filen.
