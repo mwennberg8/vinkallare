@@ -1085,6 +1085,21 @@ textarea{min-height:74px;resize:vertical}
     </div>
   </details>
 
+  <details class="sekt" id="sektVinotek" data-load="visaVinotek">
+    <summary>Vinoteket<span class="hint" id="hintVinotek"></span></summary>
+    <div class="sektkropp">
+      <p class="sub">Hämtar pris och uppgifter från vinoteket.se för de viner
+        du har. Deras pris är det du faktiskt betalat, så det går före
+        Systembolagets.<br><br>
+        Antal, plats, betyg, namn och årgång rörs aldrig.</p>
+      <div id="vinotekUt"><p class="sub">Hämtar…</p></div>
+      <button class="btn ghost" id="sVinotekIndex" type="button">Hämta sortimentslistan</button>
+      <button class="btn ghost" id="sVinotekNya" type="button">Uppdatera viner som saknar uppgifter</button>
+      <button class="btn ghost" id="sVinotekAlla" type="button">Uppdatera om alla</button>
+      <div id="vinotekRapport"></div>
+    </div>
+  </details>
+
   <details class="sekt" id="sektKallor" data-load="showSources">
     <summary>Uppslagskällor<span class="hint" id="hintKallor"></span></summary>
     <div class="sektkropp">
@@ -1770,7 +1785,7 @@ pwaByggMask();
 pwaProvaManifestfil();
 
 /* ---------- lagring ---------- */
-const APP_VERSION = "v71";
+const APP_VERSION = "v72";
 
 /* Här skrivs vinlistan in när en offlinekopia byggs. I originalfilen står
    den kvar som null, och då beter sig sidan precis som vanligt. */
@@ -4704,7 +4719,7 @@ $("aManuell").onclick = () => { setMode("in"); closeSheets(); editWine({ antal:1
  * tittar på — och sammanfattningen i rubriken hämtas i bakgrunden, för
  * den ska gå att skumma utan att öppna något.
  */
-const LADDARE = { showSources, visaSaknas, visaBackuper, visaSbInfo, visaVarde };
+const LADDARE = { showSources, visaSaknas, visaBackuper, visaSbInfo, visaVarde, visaVinotek };
 const laddade = new Set();
 
 for (const d of document.querySelectorAll(".sekt[data-load]")) {
@@ -5443,6 +5458,88 @@ function ritaKopia(){
     ? "En flaska har rört sig sedan kopian hämtades."
     : efter + " flaskor har rört sig sedan kopian hämtades.";
 }
+
+/* ---------- Vinoteket ---------- */
+
+async function visaVinotek(){
+  try {
+    const r = await api("/vinotek");
+    const i = r.index;
+    $("vinotekUt").innerHTML = i
+      ? '<p class="sub">Sortimentslistan: ' + i.antal + ' viner, hämtad '
+        + esc(tidText(i.hamtad)) + '.<br>'
+        + r.hamtade + ' av ' + r.totalt + ' viner i källaren har uppgifter härifrån.'
+        + (r.utan ? ' ' + r.utan + ' återstår.' : '') + '</p>'
+      : '<p class="sub">Ingen sortimentslista än. Hämta den först — det är '
+        + 'ett anrop och tar några sekunder.</p>';
+    $("hintVinotek").textContent = i
+      ? (r.utan ? r.utan + " kvar" : "klart")
+      : "inte igång";
+    $("sVinotekNya").hidden = !i;
+    $("sVinotekAlla").hidden = !i;
+  } catch(e){
+    $("vinotekUt").innerHTML = '<p class="sub">Kunde inte hämta: ' + esc(e.message) + '</p>';
+  }
+}
+
+$("sVinotekIndex").onclick = async () => {
+  busy(true, "Hämtar sortimentslistan…");
+  try {
+    const r = await api("/vinotek/index", { method:"POST", timeout: 90000 });
+    toast(r.antal + " viner i listan", "good");
+    await visaVinotek();
+  } catch(e){ toast(e.message, "bad"); }
+  finally { busy(false); }
+};
+
+/**
+ * Uppdateringen går via jobbkön.
+ *
+ * Varje vin är en sidhämtning på en halv sekund. Med hundra viner tar det
+ * minuter, och en webbläsare som väntar på ett så långt svar ger upp.
+ */
+async function korVinotek(alla){
+  const text = alla
+    ? "Alla viner slås upp på nytt och uppgifterna skrivs över med "
+      + "Vinotekets. Antal, plats, betyg, namn och årgång rörs inte."
+    : "Viner som saknar uppgifter från Vinoteket slås upp. Inget som "
+      + "redan hämtats därifrån rörs.";
+  if (!(await fraga({ titel: alla ? "Uppdatera om alla?" : "Uppdatera?",
+                      text, ja: "Kör" }))) return;
+
+  busy(true, "Startar…");
+  try {
+    // korJobb startar anropet själv och pollar tills det är klart.
+    const r = await korJobb("/vinotek/uppdatera", { omHamta: alla }, true);
+
+    let h = '<div class="varde" style="font-size:26px">' + r.uppdaterade
+      + ' uppdaterade</div><p class="sub">'
+      + r.granskade + ' granskade, ' + r.traffar + ' hittade, '
+      + r.falt + ' fält ändrade.';
+    if (r.osakra.length) {
+      h += '<br><br><b>' + r.osakra.length + ' osäkra</b> — flera viner passade '
+        + 'lika bra, och då är fel pris värre än inget:<br>'
+        + r.osakra.slice(0, 8).map(x => esc(x.namn)).join('<br>');
+    }
+    if (r.utan.length) {
+      h += '<br><br><b>' + r.utan.length + ' utan träff</b> — finns inte hos dem:<br>'
+        + r.utan.slice(0, 8).map(esc).join('<br>');
+    }
+    if (r.fel.length) {
+      h += '<br><br><b>Fel:</b><br>' + r.fel.slice(0, 5).map(esc).join('<br>');
+    }
+    h += '</p>';
+    $("vinotekRapport").innerHTML = h;
+
+    toast(r.uppdaterade + " viner uppdaterade", "good");
+    await visaVinotek();
+    await refresh();
+  } catch(e){ toast(e.message, "bad"); }
+  finally { busy(false); }
+}
+
+$("sVinotekNya").onclick = () => korVinotek(false);
+$("sVinotekAlla").onclick = () => korVinotek(true);
 
 /* ---------- läsläge ---------- */
 
