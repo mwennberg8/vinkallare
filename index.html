@@ -1798,7 +1798,7 @@ pwaByggMask();
 pwaProvaManifestfil();
 
 /* ---------- lagring ---------- */
-const APP_VERSION = "v76";
+const APP_VERSION = "v77";
 
 /* Här skrivs vinlistan in när en offlinekopia byggs. I originalfilen står
    den kvar som null, och då beter sig sidan precis som vanligt. */
@@ -5652,6 +5652,16 @@ async function korVinotek(alla){
   try {
     // korJobb startar anropet själv och pollar tills det är klart.
     const r = await korJobb("/vinotek/uppdatera", { omHamta: alla }, true);
+
+    /* Ett oväntat svar ska ge ett begripligt fel, inte en krasch på
+       .length några rader ned. Det var precis vad som hände när appen
+       returnerade jobb-id:t som en sträng i stället för { jobb }. */
+    if (!r || typeof r !== "object" || !Array.isArray(r.andringar)) {
+      throw new Error("Oväntat svar från appen"
+        + (typeof r === "string" ? ' ("' + r.slice(0, 40) + '")' : "")
+        + ". Är appen uppdaterad?");
+    }
+    for (const f of ["osakra", "utan", "fel"]) if (!Array.isArray(r[f])) r[f] = [];
 
     let h = '<div class="varde" style="font-size:26px">' + r.uppdaterade
       + ' uppdaterade</div><p class="sub">'
