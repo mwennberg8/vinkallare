@@ -281,6 +281,59 @@ body.kopia .row .main{width:100%}
 .popknappar{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:20px}
 .popknappar .btn{margin:0}
 
+/* ---------- skrivbord ----------
+   Appen är byggd för telefon och platta, och de vyerna ska inte ändras.
+   På en stor skärm blir samma layout en smal remsa i mitten med enorma
+   tomma fält bredvid, så från 900 px breddas den och listan går i två
+   spalter. Panelerna glider inte upp underifrån utan läggs mitt på
+   skärmen — en bottenpanel på en 27-tumsskärm är bara märklig. */
+@media (min-width: 900px) and (pointer: fine) {
+  .head, .tools, .chips, .list, .foot, .offbar {
+    max-width: 1100px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+    gap: 0 18px;
+    align-items: start;
+  }
+  /* Tomtexten ska inte klämmas ihop i en spalt. */
+  .list .empty { grid-column: 1 / -1; }
+
+  .row:first-child { border-top: 1px solid var(--line); }
+
+  .sheet {
+    left: 50%;
+    right: auto;
+    bottom: auto;
+    top: 50%;
+    width: min(560px, 92vw);
+    max-height: 84vh;
+    border-radius: 18px;
+    transform: translate(-50%, -46%) scale(.98);
+    opacity: 0;
+    transition: transform .18s, opacity .18s;
+  }
+  .sheet.on {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+  /* Draghandtaget hör till en panel man drar upp. Här dras ingenting. */
+  .sheet .grip { display: none; }
+  .sheet h2 { margin-top: 4px; }
+
+  .start .startkort { max-width: 460px; }
+  .pop { max-width: 400px; }
+
+  /* Musen har ingen tumme — knapparna får svara på hovring i stället. */
+  .row .main:hover { background: var(--stone); }
+  .tools button:hover, .btn:hover { border-color: var(--cork); }
+  .hrad.tryck:hover { background: var(--stone); }
+}
+
 /* fotnot */
 .foot{
   margin:0;
@@ -1798,7 +1851,7 @@ pwaByggMask();
 pwaProvaManifestfil();
 
 /* ---------- lagring ---------- */
-const APP_VERSION = "v74";
+const APP_VERSION = "v75";
 
 /* Här skrivs vinlistan in när en offlinekopia byggs. I originalfilen står
    den kvar som null, och då beter sig sidan precis som vanligt. */
@@ -5596,7 +5649,8 @@ $("sVinotekTest").onclick = async () => {
   try {
     const r = await api("/vinotek/test", { timeout: 90000 });
     const rad = (x) => '<div><span class="' + (x.ok ? "ja" : "nej") + '">'
-      + (x.ok ? "✓" : "✗") + '</span> ' + esc(x.profil) + ': '
+      + (x.ok ? "✓" : "✗") + '</span> '
+      + esc((x.transport || "") + (x.transport ? " · " : "") + x.profil) + ': '
       + (x.ok ? "HTTP " + x.status + ", " + x.kb + " kB" : (x.fel || "HTTP " + x.status))
       + ' <span style="opacity:.6">(' + x.ms + ' ms)</span></div>';
 
@@ -5613,7 +5667,10 @@ $("sVinotekTest").onclick = async () => {
           : (ok2
               ? 'Sortimentslistan är blockerad, men produktsidorna svarar. '
                 + 'Uppdateringen fungerar ändå — adressen gissas ur namnet.'
-              : 'Sajten svarar inte på något sätt just nu.'))
+              : 'Allt blockerat. Samma sidor svarar 200 från HomeyScript, så '
+                + 'det är inte din IP utan appens HTTP-stack som känns igen. '
+                + 'Kör sonden i HomeyScript i stället — den kan mata in '
+                + 'uppgifterna via appens API.'))
       + '</p></div>';
   } catch(e){ toast(e.message, "bad"); }
   finally { busy(false); }
