@@ -259,6 +259,31 @@ body.kopia .row .main{width:100%}
 .hrad.tryck:active{background:var(--stone)}
 .hrad .hgo{flex:none;color:var(--line);font-size:19px;line-height:1;margin-left:-4px}
 
+/* en flaska i taget */
+.enbilder{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:14px 0 4px}
+.enbild{
+  display:flex;flex-direction:column;align-items:center;gap:7px;
+  padding:12px 8px;border:1px solid var(--line);border-radius:12px;
+  background:var(--ink);color:var(--muted);font-size:12.5px;
+}
+.enbild.klar{border-color:var(--verdigris);color:var(--chalk)}
+.enbild .ebild{
+  width:100%;height:74px;border-radius:8px;background:var(--stone2);
+  background-size:cover;background-position:center;
+  display:flex;align-items:center;justify-content:center;font-size:22px;color:var(--line);
+}
+.enbild.klar .ebild{background-color:transparent}
+
+/* antalsväljare i finns-redan-rutan */
+.antalrad{display:flex;gap:8px;align-items:stretch}
+.antalrad input{text-align:center;font-size:19px;font-variant-numeric:tabular-nums}
+.stegbtn{
+  flex:none;width:48px;border:1px solid var(--line);border-radius:10px;
+  background:var(--stone2);color:var(--chalk);font-size:22px;line-height:1;
+}
+.stegbtn:active{background:var(--ink)}
+#finnsPlatsHint{margin-top:6px;font-size:12px}
+
 /* bekräftelseruta */
 .popskarm{
   position:fixed;inset:0;z-index:90;
@@ -877,6 +902,8 @@ textarea{min-height:74px;resize:vertical}
   </div>
   <input type="file" id="cam" accept="image/*" capture="environment" hidden>
   <input type="file" id="camLabel" accept="image/*" capture="environment" hidden>
+  <input type="file" id="camEnFram" accept="image/*" capture="environment" hidden>
+  <input type="file" id="camEnBak" accept="image/*" capture="environment" hidden>
 
   <div class="manual">
     <input id="eanIn" type="text" placeholder="Sök vin, eller knappa in en kod">
@@ -900,6 +927,64 @@ textarea{min-height:74px;resize:vertical}
 <div class="foot" id="foot"></div>
 
 <div class="scrim" id="scrim"></div>
+
+<div class="popskarm" id="enSkarm" hidden>
+  <div class="pop" role="dialog" aria-modal="true" aria-labelledby="enTitel">
+    <button class="stang" id="enX" type="button" aria-label="Stäng">×</button>
+    <h3 id="enTitel">Ny flaska</h3>
+    <p class="sub" id="enText">Fotografera framsidan.</p>
+
+    <div class="enbilder">
+      <button class="enbild" id="enFram" type="button">
+        <span class="ebild" id="enFramBild"></span>
+        <span class="etext">Framsida</span>
+      </button>
+      <button class="enbild" id="enBak" type="button">
+        <span class="ebild" id="enBakBild"></span>
+        <span class="etext">Baksida</span>
+      </button>
+    </div>
+
+    <label for="enAntal">Antal</label>
+    <div class="antalrad">
+      <button class="stegbtn" id="enMinus" type="button" aria-label="Färre">−</button>
+      <input type="number" id="enAntal" inputmode="numeric" min="1" step="1" value="1">
+      <button class="stegbtn" id="enPlus" type="button" aria-label="Fler">+</button>
+    </div>
+
+    <label for="enPlats">Plats</label>
+    <select id="enPlats"></select>
+
+    <div class="popknappar">
+      <button class="btn ghost" id="enAvbryt" type="button">Avbryt</button>
+      <button class="btn primary" id="enLas" type="button">Läs in</button>
+    </div>
+  </div>
+</div>
+
+<div class="popskarm" id="finnsSkarm" hidden>
+  <div class="pop" role="dialog" aria-modal="true" aria-labelledby="finnsTitel">
+    <button class="stang" id="finnsX" type="button" aria-label="Stäng">×</button>
+    <h3 id="finnsTitel">Finns redan</h3>
+    <p class="sub" id="finnsText"></p>
+
+    <label for="finnsAntal">Antal att lägga in</label>
+    <div class="antalrad">
+      <button class="stegbtn" id="finnsMinus" type="button" aria-label="Färre">−</button>
+      <input type="number" id="finnsAntal" inputmode="numeric" min="1" step="1" value="1">
+      <button class="stegbtn" id="finnsPlus" type="button" aria-label="Fler">+</button>
+    </div>
+
+    <label for="finnsPlats">Plats</label>
+    <select id="finnsPlats"></select>
+    <p class="sub" id="finnsPlatsHint"></p>
+
+    <div class="popknappar">
+      <button class="btn ghost" id="finnsNej" type="button">Avbryt</button>
+      <button class="btn primary" id="finnsJa" type="button">Lägg in</button>
+    </div>
+  </div>
+</div>
 
 <div class="popskarm" id="popSkarm" hidden>
   <div class="pop" role="dialog" aria-modal="true" aria-labelledby="popTitel">
@@ -1798,7 +1883,7 @@ pwaByggMask();
 pwaProvaManifestfil();
 
 /* ---------- lagring ---------- */
-const APP_VERSION = "v77";
+const APP_VERSION = "v78";
 
 /* Här skrivs vinlistan in när en offlinekopia byggs. I originalfilen står
    den kvar som null, och då beter sig sidan precis som vanligt. */
@@ -2450,6 +2535,94 @@ async function visaAngra(){
  * och auto-stängs efter 30 sekunders tystnad så en glömd ruta inte ligger
  * kvar och väntar på ett svar.
  */
+/**
+ * "Finns redan" — en gemensam ruta för alla vägar in.
+ *
+ * Streckkod, etikett och manuell inmatning ska bete sig likadant när vinet
+ * redan står i källaren: fråga hur många som ska in och var de ska stå,
+ * med den befintliga hyllan förvald.
+ *
+ * Förvalet är den hylla flaskorna redan står på. Att lägga samma vin på två
+ * ställen går, men är sällan det man menar — och märker man det först när
+ * man letar är det för sent.
+ */
+let finnsSvar = null;
+
+function finnsFraga(w, { antal = 1 } = {}){
+  const kvar = Number(w.antal) || 0;
+  $("finnsTitel").textContent = kvar ? "Finns redan i källaren" : "Slut i källaren";
+  $("finnsText").textContent = w.namn + (w.argang ? " " + w.argang : "")
+    + " — " + (kvar
+        ? kvar + (kvar === 1 ? " flaska" : " flaskor")
+          + (w.plats ? " på " + platsText(w).toLowerCase() : " utan plats")
+        : "står på noll");
+
+  $("finnsAntal").value = String(Math.max(1, antal));
+  $("finnsPlats").innerHTML = hyllVal(w.plats);
+  $("finnsPlatsHint").textContent = w.plats
+    ? "Föreslår " + platsText(w).toLowerCase() + ", där de andra står."
+    : "Vinet har ingen plats i dag.";
+  $("finnsPlatsHint").hidden = false;
+
+  $("finnsSkarm").hidden = false;
+  return new Promise(res => { finnsSvar = res; });
+}
+
+function finnsStang(svar){
+  $("finnsSkarm").hidden = true;
+  const f = finnsSvar;
+  finnsSvar = null;
+  if (f) f(svar);
+}
+
+$("finnsNej").onclick = () => finnsStang(null);
+$("finnsX").onclick = () => finnsStang(null);
+$("finnsSkarm").onclick = ev => { if (ev.target === $("finnsSkarm")) finnsStang(null); };
+
+$("finnsJa").onclick = () => {
+  const n = Math.max(1, Math.round(Number($("finnsAntal").value) || 1));
+  const p = $("finnsPlats").value;
+  finnsStang({ antal: n, plats: p === "" ? "" : (/^\d+$/.test(p) ? Number(p) : p) });
+};
+
+const finnsSteg = d => {
+  const n = Math.max(1, Math.round(Number($("finnsAntal").value) || 1) + d);
+  $("finnsAntal").value = String(n);
+};
+$("finnsPlus").onclick = () => finnsSteg(1);
+$("finnsMinus").onclick = () => finnsSteg(-1);
+
+/**
+ * Lägg in flaskor på ett vin som redan finns.
+ *
+ * Ett anrop per flaska, för att /scan är det som skriver historiken — då
+ * blir varje inlägg en rörelse man kan ångra var för sig.
+ */
+async function laggInFinns(w, val){
+  busy(true, "Lägger in…");
+  try {
+    if (val.plats !== w.plats) {
+      await api("/wines/" + w.id, { method:"PUT", body:{ plats: val.plats } });
+    }
+    for (let i = 0; i < val.antal; i++) {
+      await api("/scan", { method:"POST", body:{ id: w.id, riktning: "in" } });
+    }
+    buzz(45);
+    toast(val.antal + (val.antal === 1 ? " flaska" : " flaskor") + " inlagda: "
+      + w.namn + (val.plats ? " · " + platsText({ plats: val.plats }) : ""), "good");
+    await refresh();
+    return true;
+  } catch(e){ toast(e.message, "bad"); return false; }
+  finally { busy(false); }
+}
+
+/** Hela flödet: fråga, och lägg in om man svarade ja. */
+async function finnsFlode(w, opts){
+  const val = await finnsFraga(w, opts);
+  if (!val) return false;
+  return laggInFinns(w, val);
+}
+
 let popSvar = null;
 let popTimer = null;
 
@@ -3295,6 +3468,21 @@ $("sokNatUt").onclick = ev => {
 
 /* ---------- skanningsflödet ---------- */
 async function handleEan(ean){
+  /* Läggs en flaska in på ett vin som redan finns ska man få välja antal
+     och plats — inte bara få den tyst räknad. Vi frågar FÖRE inläggningen,
+     så vi slår upp vinet i stället för att skanna direkt. */
+  if (mode === "in") {
+    try {
+      const t = await api("/wines?ean=" + encodeURIComponent(ean));
+      const traff = (t.wines || []).filter(w => w.ean === ean
+        || (w.eanAlt || []).includes(ean));
+      if (traff.length === 1) {
+        await finnsFlode(traff[0]);
+        return;
+      }
+    } catch(e){ /* faller igenom till vanlig skanning */ }
+  }
+
   const res = await api("/scan", { method:"POST", body:{ ean, riktning: mode } });
 
   if (res.status === "ok") {
@@ -3648,7 +3836,7 @@ $("dDel").onclick = async () => {
 };
 
 /* ---------- etikettavläsning ---------- */
-const shots = { framsida:null, baksida:null, hals:null, framCrop:null, bakCrop:null };
+const shots = { framsida:null, baksida:null, hals:null, framCrop:null };
 
 /**
  * Telefonbilder är 8–12 megapixel. Att skicka dem råa kostar tid och pengar
@@ -3737,7 +3925,6 @@ const toFramCrop = file => toCrop(file, 0.28, 0.58, 1400, 0.9);    // framsidans
  * bara mitt på baksidesetiketten. Fotograferas bara framsidan finns
  * årtalet inte i bilden över huvud taget.
  */
-const toBakCrop = file => toCrop(file, 0.22, 0.56, 1400, 0.9);
 
 function setShot(side, dataUrl){
   shots[side] = dataUrl;
@@ -3754,7 +3941,7 @@ function setShot(side, dataUrl){
 }
 
 function clearShots(){
-  shots.framsida = shots.baksida = shots.hals = shots.framCrop = shots.bakCrop = null;
+  shots.framsida = shots.baksida = shots.hals = shots.framCrop = null;
   for (const id of ["shotA","shotB"]) {
     const b = $(id);
     b.classList.remove("filled");
@@ -3781,7 +3968,6 @@ $("galShot").onchange = async ev => {
       shots.hals = await toHalsCrop(f).catch(() => null);
       shots.framCrop = await toFramCrop(f).catch(() => null);
     }
-    if (galShotSida === "baksida") shots.bakCrop = await toBakCrop(f).catch(() => null);
   } catch(e){ toast(e.message, "bad"); }
 };
 
@@ -3799,7 +3985,6 @@ for (const [inp, side] of [["camA","framsida"],["camB","baksida"]]) {
         shots.hals = await toHalsCrop(f).catch(() => null);
         shots.framCrop = await toFramCrop(f).catch(() => null);
       }
-      if (side === "baksida") shots.bakCrop = await toBakCrop(f).catch(() => null);
     } catch(e){ toast(e.message, "bad"); }
   };
 }
@@ -3832,7 +4017,7 @@ $("ocrRun").onclick = async () => {
   try {
     const r = await api("/vision", { method:"POST",
       body:{ framsida: shots.framsida, baksida: shots.baksida,
-             hals: shots.hals, framCrop: shots.framCrop, bakCrop: shots.bakCrop } });
+             hals: shots.hals, framCrop: shots.framCrop } });
 
     const a = r.avlast || {};
     const { filled, kept } = fillEmpty(a);
@@ -3990,18 +4175,12 @@ function visaDubblett(kandidater, body){
       $("wSave").click();
       return;
     }
-    busy(true, "Lägger till…");
-    try {
-      const antal = Math.max(0, Number(body.antal) || 0);
-      const w = wines.find(x => x.id === b.dataset.id);
-      const nytt = (Number(w.antal) || 0) + antal;
-      await api("/wines/" + encodeURIComponent(b.dataset.id),
-        { method:"PUT", body:{ antal: nytt } });
-      closeSheets();
-      toast(antal + " lades till på " + w.namn + " — " + nytt + " i lager", "good");
-      await refresh();
-    } catch(e){ toast(e.message, "bad"); }
-    finally { busy(false); }
+    const w = wines.find(x => x.id === b.dataset.id);
+    if (!w) return;
+    closeSheets();
+    /* Samma ruta som överallt annars: antal och plats, med den befintliga
+       hyllan förvald. Tidigare skrevs antalet rakt in utan historik. */
+    await finnsFlode(w, { antal: Math.max(1, Number(body.antal) || 1) });
   };
   openSheet("shPick");
 }
@@ -4053,6 +4232,132 @@ $("camLabel").onchange = ev => {
   if (f) lasEtikett(f);
 };
 
+/**
+ * En flaska i taget: framsida, baksida, antal och plats — sedan läsning.
+ *
+ * Den gamla vägen läste av direkt på framsidan och frågade om resten
+ * efteråt. Baksidan innehåller ofta druva, alkoholhalt och importör, så
+ * att ha den med redan i första anropet ger ett bättre svar än att
+ * komplettera i efterhand.
+ */
+const enFlaska = { fram:null, bak:null };
+let enSvar = null;
+
+function enRita(){
+  for (const [sida, knapp, ruta] of [["fram","enFram","enFramBild"],
+                                     ["bak","enBak","enBakBild"]]) {
+    const bild = enFlaska[sida];
+    $(knapp).classList.toggle("klar", !!bild);
+    $(ruta).style.backgroundImage = bild ? 'url("' + bild + '")' : "";
+    $(ruta).textContent = bild ? "" : "+";
+  }
+  $("enText").textContent = !enFlaska.fram
+    ? "Fotografera framsidan."
+    : (!enFlaska.bak
+        ? "Framsidan är tagen. Ta baksidan, eller läs in direkt."
+        : "Båda bilderna tagna. Välj antal och plats.");
+  $("enLas").disabled = !enFlaska.fram;
+}
+
+function enOppna(){
+  enFlaska.fram = null;
+  enFlaska.bak = null;
+  $("enAntal").value = "1";
+  $("enPlats").innerHTML = hyllVal(sistaPlats || "");
+  enRita();
+  $("enSkarm").hidden = false;
+  // Kameran öppnas direkt — man tryckte på Etikett för att fotografera.
+  setTimeout(() => $("camEnFram").click(), 150);
+}
+
+function enStang(){
+  $("enSkarm").hidden = true;
+  enFlaska.fram = null;
+  enFlaska.bak = null;
+}
+
+$("enX").onclick = enStang;
+$("enAvbryt").onclick = enStang;
+$("enSkarm").onclick = ev => { if (ev.target === $("enSkarm")) enStang(); };
+$("enFram").onclick = () => $("camEnFram").click();
+$("enBak").onclick = () => $("camEnBak").click();
+const enSteg = d => {
+  $("enAntal").value = String(Math.max(1, Math.round(Number($("enAntal").value) || 1) + d));
+};
+$("enPlus").onclick = () => enSteg(1);
+$("enMinus").onclick = () => enSteg(-1);
+
+$("camEnFram").onchange = async ev => {
+  const f = ev.target.files && ev.target.files[0];
+  ev.target.value = "";
+  if (!f) return;
+  busy(true, "Förbereder…");
+  try {
+    enFlaska.framFil = f;
+    enFlaska.fram = await toJpeg(f);
+    enRita();
+    // Nästa steg är baksidan — öppna kameran igen utan extra tryck.
+    setTimeout(() => $("camEnBak").click(), 200);
+  } catch(e){ toast(e.message, "bad"); }
+  finally { busy(false); }
+};
+
+$("camEnBak").onchange = async ev => {
+  const f = ev.target.files && ev.target.files[0];
+  ev.target.value = "";
+  if (!f) return;
+  busy(true, "Förbereder…");
+  try {
+    enFlaska.bakFil = f;
+    enFlaska.bak = await toJpeg(f);
+    enRita();
+  } catch(e){ toast(e.message, "bad"); }
+  finally { busy(false); }
+};
+
+$("enLas").onclick = async () => {
+  if (!enFlaska.fram) { toast("Framsidan behövs", "warn"); return; }
+  const antal = Math.max(1, Math.round(Number($("enAntal").value) || 1));
+  const p = $("enPlats").value;
+  const plats = p === "" ? "" : (/^\d+$/.test(p) ? Number(p) : p);
+  if (plats !== "") sistaPlats = plats;
+
+  const fram = enFlaska.framFil;
+  const bak = enFlaska.bakFil;
+  const enBild = { fram: enFlaska.fram, bak: enFlaska.bak };
+  enStang();
+
+  /* Rutan lägger ALLTID in. Står appen kvar i ut-läge — man kan ha
+     skannat ut något precis innan — avvisas ett nytt vin med "hittade
+     inget matchande", vilket är obegripligt när man just fotograferat en
+     ny flaska. */
+  setMode("in");
+
+  busy(true, "Läser etiketten…");
+  try {
+    /* Bilderna är redan omvandlade när de togs — gör om det bara om
+       något saknas. Utsnitten får misslyckas; de är en hjälp för
+       årgångsjakten, inte ett krav. */
+    const framBild = enBild.fram || (fram ? await toJpeg(fram) : null);
+    const bakBild = enBild.bak || (bak ? await toJpeg(bak) : null);
+    if (!framBild) throw new Error("Framsidan saknas");
+
+    const hals = fram ? await toHalsCrop(fram).catch(() => null) : null;
+    const framCrop = fram ? await toFramCrop(fram).catch(() => null) : null;
+
+    const r = await api("/identify", { method:"POST", body:{
+      framsida: framBild,
+      baksida: bakBild,
+      hals, framCrop, riktning: "in",
+    }});
+    buzz(35);
+    await hanteraEtikett(r, framBild, { antal, plats });
+  } catch(e){
+    buzz([25,60,25]);
+    toast(e.message, "bad");
+  } finally { busy(false); }
+};
+
 /** Samma väg oavsett om bilden kommer från kameran eller galleriet. */
 async function lasEtikett(fil){
   busy(true, "Läser etiketten…");
@@ -4094,14 +4399,22 @@ function etikettNamn(a){
   return [a.producent, a.namn, a.argang].filter(Boolean).join(" ") || "okänd flaska";
 }
 
-async function hanteraEtikett(r, framsida){
+async function hanteraEtikett(r, framsida, val = null){
   const a = r.avlast || {};
   const kand = r.kallare || [];
 
   // En tydlig träff räknas direkt. Är den svag frågar vi hellre.
   if (kand.length === 1 && kand[0].poang >= 0.6) {
-    await sparaKodOm(kand[0].wine, a);
-    await korScan({ id: kand[0].wine.id });
+    const w = kand[0].wine;
+    await sparaKodOm(w, a);
+    if (mode === "in") {
+      /* Vinet finns redan. Har antal och plats redan valts i
+         en-flaska-rutan används de; annars frågar vi som vanligt. */
+      if (val) await laggInFinns(w, val);
+      else await finnsFlode(w);
+      return;
+    }
+    await korScan({ id: w.id });
     return;
   }
 
@@ -4124,12 +4437,18 @@ async function hanteraEtikett(r, framsida){
       if (!b) return;
       closeSheets();
       if (b.dataset.id === "ny") {
-        editWine(Object.assign({ antal:1 }, a), true);
+        editWine(Object.assign({ antal: (val && val.antal) || 1,
+          plats: val ? val.plats : sistaPlats }, a), true);
         if (framsida) setShot("framsida", framsida);
         return;
       }
       const valt = kand.find(k => k.wine.id === b.dataset.id);
       if (valt) await sparaKodOm(valt.wine, a);
+      if (mode === "in" && valt) {
+        if (val) await laggInFinns(valt.wine, val);
+        else await finnsFlode(valt.wine);
+        return;
+      }
       await korScan({ id: b.dataset.id });
     };
     openSheet("shPick");
@@ -4164,7 +4483,9 @@ async function hanteraEtikett(r, framsida){
     closeSheets();
     const bas = b.dataset.i === "avlast" ? a
       : Object.assign({}, a, traffar[+b.dataset.i]);
-    editWine(Object.assign({ antal:1 }, bas), true);
+    // Antal och plats är redan valda i en-flaska-rutan — fråga inte igen.
+    editWine(Object.assign({ antal: (val && val.antal) || 1,
+      plats: val ? val.plats : sistaPlats }, bas), true);
     if (framsida) setShot("framsida", framsida);
   };
   openSheet("shPick");
@@ -4376,7 +4697,6 @@ $("galSerie").onchange = async ev => {
         hals: await toHalsCrop(fram).catch(() => null),
         framCrop: await toFramCrop(fram).catch(() => null),
         baksida: bak ? await toJpeg(bak) : null,
-        bakCrop: bak ? await toBakCrop(bak).catch(() => null) : null,
         antal: 1, plats: sistaPlats, avlast: null, last: null,
       });
     }
@@ -4419,7 +4739,6 @@ $("camSerieBak").onchange = async ev => {
   try {
     serieLasFalt();
     serie[serieBakTill].baksida = await toJpeg(f);
-    serie[serieBakTill].bakCrop = await toBakCrop(f).catch(() => null);
     serieRender();
     buzz(20);
   } catch(e){ toast(e.message, "bad"); }
@@ -4438,7 +4757,6 @@ $("serieLas").onclick = async () => {
     if (f.baksida) bilder.push({ index: i + 1, sida: "baksida", bild: f.baksida });
     if (f.hals) bilder.push({ index: i + 1, sida: "hals", bild: f.hals });
     if (f.framCrop) bilder.push({ index: i + 1, sida: "framCrop", bild: f.framCrop });
-    if (f.bakCrop) bilder.push({ index: i + 1, sida: "bakCrop", bild: f.bakCrop });
   });
 
   busy(true, "Skickar bild 1 av " + bilder.length + "…");
@@ -4718,7 +5036,7 @@ $("addStang").onclick = closeSheets;
 
 // Varje väg in sätter riktningen själv, precis innan den används.
 $("aScan").onclick = () => { setMode("in"); closeSheets(); $("cam").click(); };
-$("aLabel").onclick = () => { setMode("in"); closeSheets(); $("camLabel").click(); };
+$("aLabel").onclick = () => { setMode("in"); closeSheets(); enOppna(); };
 $("aSerie").onclick = () => { setMode("in"); closeSheets(); oppnaSerie(); };
 $("aSok").onclick = () => { setMode("in"); closeSheets(); oppnaSok($("eanIn").value.trim()); };
 $("aImport").onclick = () => { setMode("in"); closeSheets(); $("sImport").click(); };
