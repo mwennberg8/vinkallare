@@ -370,6 +370,11 @@ body.offline .manual input,body.offline #btnEan{opacity:.4;pointer-events:none}
   padding:9px 11px;color:var(--chalk);font-size:14px;line-height:1.4;resize:vertical;
 }
 #dKommentar::placeholder{color:var(--muted)}
+#vinotekText{
+  font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  font-size:11.5px;line-height:1.5;min-height:220px;
+  white-space:pre;overflow-x:auto;
+}
 #dKommentar:focus{border-color:var(--cork);outline:none}
 /* Läsläget ändrar ingenting — där är betyget bara att titta på. */
 body.las #dStjarnor,body.las #dKommentar{pointer-events:none;opacity:.75}
@@ -1091,12 +1096,20 @@ textarea{min-height:74px;resize:vertical}
       <p class="sub">Hämtar pris och uppgifter från vinoteket.se för de viner
         du har. Deras pris är det du faktiskt betalat, så det går före
         Systembolagets.<br><br>
-        Antal, plats, betyg, namn och årgång rörs aldrig.</p>
+        Antal, plats, betyg, namn och årgång rörs aldrig.<br><br>
+        Sortimentslistan gör matchningen säkrare, men den behövs inte —
+        utan den gissas adressen ur vinets namn.</p>
       <div id="vinotekUt"><p class="sub">Hämtar…</p></div>
       <button class="btn ghost" id="sVinotekIndex" type="button">Hämta sortimentslistan</button>
+      <button class="btn ghost" id="sVinotekTest" type="button">Testa anslutningen</button>
       <button class="btn ghost" id="sVinotekNya" type="button">Uppdatera viner som saknar uppgifter</button>
       <button class="btn ghost" id="sVinotekAlla" type="button">Uppdatera om alla</button>
       <div id="vinotekRapport"></div>
+      <div id="vinotekLogg" hidden>
+        <label for="vinotekText">Ändringar</label>
+        <textarea id="vinotekText" rows="12" readonly></textarea>
+        <button class="btn ghost" id="sVinotekKopiera" type="button">Kopiera</button>
+      </div>
     </div>
   </details>
 
@@ -1785,7 +1798,7 @@ pwaByggMask();
 pwaProvaManifestfil();
 
 /* ---------- lagring ---------- */
-const APP_VERSION = "v72";
+const APP_VERSION = "v74";
 
 /* Här skrivs vinlistan in när en offlinekopia byggs. I originalfilen står
    den kvar som null, och då beter sig sidan precis som vanligt. */
@@ -5461,6 +5474,86 @@ function ritaKopia(){
 
 /* ---------- Vinoteket ---------- */
 
+const VINOTEK_NAMN = {
+  pris:"Pris", druvor:"Druvor", region:"Region", land:"Land", typ:"Typ",
+  volym:"Volym", alkohol:"Alkohol", passarTill:"Passar till",
+  drickFran:"Drick från", drickTill:"Drick till",
+  prisUppskattat:"Pris uppskattat", passarTillEget:"Eget förslag",
+};
+
+/**
+ * Skriv ut körningen som text man kan kopiera.
+ *
+ * Varje ändring med före- och eftervärde. Går något fel är det gamla värdet
+ * borta ur källaren, och då är det här enda spåret av vad som stod där.
+ */
+function vinotekTillText(r){
+  if (!r) return "";
+  const d = new Date(r.tid || Date.now());
+  const rader = [];
+
+  rader.push("VINOTEKET — " + d.toLocaleString("sv-SE"));
+  rader.push("Läge: " + (r.lage === "direkt" ? "utan sortimentslista" : "sortimentslista"));
+  rader.push(r.granskade + " granskade, " + r.traffar + " hittade, "
+    + r.uppdaterade + " uppdaterade, " + r.falt + " fält ändrade.");
+  rader.push("");
+
+  for (const v of (r.andringar || [])) {
+    rader.push("── " + v.namn + (v.argang ? " " + v.argang : ""));
+    if (v.slug) rader.push("   vinoteket.se/" + v.slug);
+    for (const f of v.falt) {
+      const namn = (VINOTEK_NAMN[f.falt] || f.falt) + ":";
+      const fran = f.fran === null || f.fran === "" ? "(tomt)" : String(f.fran);
+      rader.push("   " + namn.padEnd(16) + fran + "  →  " + String(f.till));
+    }
+    rader.push("");
+  }
+
+  if ((r.osakra || []).length) {
+    rader.push("OSÄKRA — flera viner passade lika bra, inget ändrat:");
+    for (const x of r.osakra) {
+      rader.push("   " + x.namn);
+      for (const k of (x.kandidater || [])) rader.push("      vinoteket.se/" + k);
+    }
+    rader.push("");
+  }
+  if ((r.utan || []).length) {
+    rader.push("UTAN TRÄFF — finns inte hos dem:");
+    for (const x of r.utan) rader.push("   " + x);
+    rader.push("");
+  }
+  if ((r.fel || []).length) {
+    rader.push("FEL:");
+    for (const x of r.fel) rader.push("   " + x);
+  }
+  return rader.join("\n");
+}
+
+function visaVinotekLogg(r){
+  const t = vinotekTillText(r);
+  $("vinotekText").value = t;
+  $("vinotekLogg").hidden = !t;
+}
+
+$("sVinotekKopiera").onclick = async () => {
+  const t = $("vinotekText").value;
+  if (!t) return;
+  try {
+    // Ren HTTP är ingen säker kontext, så clipboard-API:t saknas ofta.
+    // Markering plus execCommand fungerar överallt.
+    const f = $("vinotekText");
+    f.removeAttribute("readonly");
+    f.select();
+    f.setSelectionRange(0, t.length);
+    const ok = document.execCommand && document.execCommand("copy");
+    f.setAttribute("readonly", "readonly");
+    if (!ok && navigator.clipboard) await navigator.clipboard.writeText(t);
+    toast("Kopierat — " + t.split("\n").length + " rader", "good");
+  } catch(e){
+    toast("Kunde inte kopiera. Markera texten och kopiera för hand.", "warn");
+  }
+};
+
 async function visaVinotek(){
   try {
     const r = await api("/vinotek");
@@ -5470,17 +5563,61 @@ async function visaVinotek(){
         + esc(tidText(i.hamtad)) + '.<br>'
         + r.hamtade + ' av ' + r.totalt + ' viner i källaren har uppgifter härifrån.'
         + (r.utan ? ' ' + r.utan + ' återstår.' : '') + '</p>'
-      : '<p class="sub">Ingen sortimentslista än. Hämta den först — det är '
-        + 'ett anrop och tar några sekunder.</p>';
-    $("hintVinotek").textContent = i
-      ? (r.utan ? r.utan + " kvar" : "klart")
-      : "inte igång";
-    $("sVinotekNya").hidden = !i;
-    $("sVinotekAlla").hidden = !i;
+      : '<p class="sub">Ingen sortimentslista. Uppdateringen fungerar ändå — '
+        + 'adressen gissas ur vinets namn — men listan gör matchningen '
+        + 'säkrare. Går den inte att hämta, tryck Testa anslutningen.</p>';
+    // Senaste körningen finns kvar även efter att panelen stängts — det är
+    // då man kommer på att man ville se vad som ändrades.
+    try {
+      const senaste = await api("/vinotek/senaste");
+      if (senaste) visaVinotekLogg(senaste);
+    } catch(e){}
+
+    $("hintVinotek").textContent = r.utan
+      ? r.utan + " kvar"
+      : (r.hamtade ? "klart" : "inte igång");
+    // Uppdateringen fungerar utan index också — adressen gissas då.
+    $("sVinotekNya").hidden = false;
+    $("sVinotekAlla").hidden = false;
   } catch(e){
     $("vinotekUt").innerHTML = '<p class="sub">Kunde inte hämta: ' + esc(e.message) + '</p>';
   }
 }
+
+/**
+ * Mät vad sajten svarar på olika rubriker.
+ *
+ * Sitemapen gav 200 från HomeyScript men 403 från appen — samma adress.
+ * Skillnaden är HTTP-stacken, och vilken uppsättning som går igenom går
+ * inte att räkna ut, bara mätas.
+ */
+$("sVinotekTest").onclick = async () => {
+  busy(true, "Testar…");
+  try {
+    const r = await api("/vinotek/test", { timeout: 90000 });
+    const rad = (x) => '<div><span class="' + (x.ok ? "ja" : "nej") + '">'
+      + (x.ok ? "✓" : "✗") + '</span> ' + esc(x.profil) + ': '
+      + (x.ok ? "HTTP " + x.status + ", " + x.kb + " kB" : (x.fel || "HTTP " + x.status))
+      + ' <span style="opacity:.6">(' + x.ms + ' ms)</span></div>';
+
+    const ok1 = r.sitemap.filter(x => x.ok).length;
+    const ok2 = r.produkt.filter(x => x.ok).length;
+
+    $("vinotekRapport").innerHTML =
+      '<div class="pwarader"><b>Sortimentslistan</b>'
+      + r.sitemap.map(rad).join("")
+      + '<b style="display:block;margin-top:10px">En produktsida</b>'
+      + r.produkt.map(rad).join("")
+      + '<p>' + (ok1
+          ? 'Sortimentslistan går att hämta.'
+          : (ok2
+              ? 'Sortimentslistan är blockerad, men produktsidorna svarar. '
+                + 'Uppdateringen fungerar ändå — adressen gissas ur namnet.'
+              : 'Sajten svarar inte på något sätt just nu.'))
+      + '</p></div>';
+  } catch(e){ toast(e.message, "bad"); }
+  finally { busy(false); }
+};
 
 $("sVinotekIndex").onclick = async () => {
   busy(true, "Hämtar sortimentslistan…");
@@ -5515,7 +5652,8 @@ async function korVinotek(alla){
     let h = '<div class="varde" style="font-size:26px">' + r.uppdaterade
       + ' uppdaterade</div><p class="sub">'
       + r.granskade + ' granskade, ' + r.traffar + ' hittade, '
-      + r.falt + ' fält ändrade.';
+      + r.falt + ' fält ändrade'
+      + (r.lage === 'direkt' ? ' (utan sortimentslista)' : '') + '.';
     if (r.osakra.length) {
       h += '<br><br><b>' + r.osakra.length + ' osäkra</b> — flera viner passade '
         + 'lika bra, och då är fel pris värre än inget:<br>'
@@ -5530,6 +5668,7 @@ async function korVinotek(alla){
     }
     h += '</p>';
     $("vinotekRapport").innerHTML = h;
+    visaVinotekLogg(r);
 
     toast(r.uppdaterade + " viner uppdaterade", "good");
     await visaVinotek();
