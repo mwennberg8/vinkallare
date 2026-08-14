@@ -629,13 +629,24 @@ body.las #dBetyg:not(.harbetyg){display:none}
 .fact.tom .v{color:var(--cork)}
 
 /* signature: the rack — count you read, not parse */
+/* Flaskans färg = vintyp, ingenting annat.
+   Tidigare betydde grönt "utanför dricksfönstret" och guld "drickbar nu" —
+   men grönt och guld ÄR flaskfärger för vitt och rött, så ögat läste dem
+   som vintyp oavsett vad koden menade. Dricksfönstret syns i årtalen och
+   i filtret Dricka nu; det behöver ingen egen färg. */
 .rack{display:flex;align-items:flex-end;gap:2.5px;margin-top:6px;height:15px}
-.rack svg{width:6px;height:15px;flex:none;fill:var(--verdigris-lit)}
+.rack svg{width:6px;height:15px;flex:none;fill:var(--flaska,#6E7B74)}
+
+.rack.rott     { --flaska:#7B2233; }   /* mörkt vinrött glas */
+.rack.vitt     { --flaska:#5E8F6E; }   /* grönt glas, som vitvinsflaskor är */
+.rack.rose     { --flaska:#C2718A; }
+.rack.bubbel   { --flaska:#3E6B58; }   /* mörkgrönt, tjockare glas */
+.rack.starkvin { --flaska:#8A5A2B; }
+.rack.orange   { --flaska:#C0803C; }
 .rack .more{
   font-size:11px;color:var(--muted);margin-left:3px;
   font-variant-numeric:tabular-nums;line-height:1;align-self:center;
 }
-.rack.ready svg{fill:var(--cork)}
 .rack.empty{height:15px;align-items:center}
 .rack.empty span{font-size:11.5px;color:var(--muted)}
 
@@ -1883,7 +1894,7 @@ pwaByggMask();
 pwaProvaManifestfil();
 
 /* ---------- lagring ---------- */
-const APP_VERSION = "v78";
+const APP_VERSION = "v79";
 
 /* Här skrivs vinlistan in när en offlinekopia byggs. I originalfilen står
    den kvar som null, och då beter sig sidan precis som vanligt. */
@@ -2426,13 +2437,34 @@ $("scrim").onclick = closeSheets;
 const BOTTLE = '<svg viewBox="0 0 8 24" aria-hidden="true"><path d="M3 0h2v5.4l1.4 3.4V22a2 2 0 0 1-2 2H3.6a2 2 0 0 1-2-2V8.8L3 5.4z"/></svg>';
 const YEAR = new Date().getFullYear();
 
+/**
+ * Vilken flaskfärg hör till typen?
+ *
+ * Matchar på nyckelord i stället för exakta namn: typen kommer från
+ * etiketter, Systembolaget och Vinoteket, och de skriver den olika —
+ * "Rött vin", "Rödvin", "Mousserande vin", "Champagne".
+ *
+ * Okänd eller saknad typ ger den neutrala grå färgen. Att gissa vore
+ * värre: en grön flaska på ett okänt vin ser ut som ett påstående.
+ */
+function flaskTyp(typ){
+  const t = String(typ || "").toLowerCase();
+  if (!t) return "";
+  if (/champagne|mousser|bubbl|cava|prosecco|crémant|pärlande/.test(t)) return "bubbel";
+  if (/ros[eé]/.test(t)) return "rose";
+  if (/orange/.test(t)) return "orange";
+  if (/stark|port|sherry|madeira|dessert|sött vin/.test(t)) return "starkvin";
+  if (/vit|white|hvit|blanc/.test(t)) return "vitt";
+  if (/röd|rott|rött|red|rouge|tinto/.test(t)) return "rott";
+  return "";
+}
+
 function rack(w){
   const n = Number(w.antal) || 0;
   if (n === 0) return '<div class="rack empty"><span>slut</span></div>';
-  const ready = w.drickFran && YEAR >= Number(w.drickFran)
-             && (!w.drickTill || YEAR <= Number(w.drickTill));
   const shown = Math.min(n, 10);
-  return '<div class="rack' + (ready ? " ready" : "") + '">'
+  const farg = flaskTyp(w.typ);
+  return '<div class="rack' + (farg ? " " + farg : "") + '">'
        + BOTTLE.repeat(shown)
        + (n > shown ? '<span class="more">+' + (n - shown) + '</span>' : '')
        + '</div>';
@@ -3860,7 +3892,17 @@ const shots = { framsida:null, baksida:null, hals:null, framCrop:null };
  * Däremot märks uppladdningstiden: varje megabyte ska upp till Homey och
  * vidare till Google.
  */
-function toJpeg(file, max = 1600, q = 0.85){
+/**
+ * Bilderna måste rymmas i en begäran.
+ *
+ * Homey avvisar för stora anrop med "payload too large". När baksidan
+ * började följa med i samma anrop som framsidan gick nyttolasten från
+ * ~600 kB till ~800 kB, och då small det.
+ *
+ * 1280 px räcker gott för att läsa en etikett — texten är stor i bild —
+ * och ger ungefär halva storleken mot 1600.
+ */
+function toJpeg(file, max = 1280, q = 0.8){
   return new Promise((ok, no) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
@@ -3914,8 +3956,8 @@ function toCrop(file, top = 0, andel = 0.42, max = 1200, q = 0.9){
  * 1600 px gör små siffror oläsliga; beskärningarna behåller upplösningen
  * där det räknas.
  */
-const toHalsCrop = file => toCrop(file, 0, 0.42, 1200, 0.9);       // kapsyl + halsetikett
-const toFramCrop = file => toCrop(file, 0.28, 0.58, 1400, 0.9);    // framsidans etikett
+const toHalsCrop = file => toCrop(file, 0, 0.42, 1000, 0.82);      // kapsyl + halsetikett
+const toFramCrop = file => toCrop(file, 0.28, 0.58, 1100, 0.82);   // framsidans etikett
 
 /**
  * Baksidesetiketten ur originalet.
@@ -4345,11 +4387,26 @@ $("enLas").onclick = async () => {
     const hals = fram ? await toHalsCrop(fram).catch(() => null) : null;
     const framCrop = fram ? await toFramCrop(fram).catch(() => null) : null;
 
-    const r = await api("/identify", { method:"POST", body:{
-      framsida: framBild,
-      baksida: bakBild,
-      hals, framCrop, riktning: "in",
-    }});
+    /* Väg innan vi skickar. Är det för stort krymper vi hellre bilderna
+       än får ett "payload too large" som inte säger vad man ska göra. */
+    let kropp = { framsida: framBild, baksida: bakBild, hals, framCrop, riktning: "in" };
+    if (vagd(kropp) > 700 * 1024) {
+      // Utsnitten först: de är en hjälp för årgången, inte grunddata.
+      kropp = { framsida: framBild, baksida: bakBild, hals, riktning: "in" };
+    }
+    if (vagd(kropp) > 700 * 1024) {
+      kropp = { framsida: framBild, baksida: bakBild, riktning: "in" };
+    }
+    if (vagd(kropp) > 700 * 1024 && fram) {
+      // Sista utvägen: mindre bilder. Hellre en sämre avläsning än ingen.
+      kropp = {
+        framsida: await toJpeg(fram, 1000, 0.72),
+        baksida: bak ? await toJpeg(bak, 1000, 0.72) : null,
+        riktning: "in",
+      };
+    }
+
+    const r = await api("/identify", { method:"POST", body: kropp });
     buzz(35);
     await hanteraEtikett(r, framBild, { antal, plats });
   } catch(e){
@@ -5788,6 +5845,15 @@ function ritaKopia(){
   $("kopiaNag").textContent = efter === 1
     ? "En flaska har rört sig sedan kopian hämtades."
     : efter + " flaskor har rört sig sedan kopian hämtades.";
+}
+
+/** Ungefärlig storlek på en begäran, i byte. */
+function vagd(obj){
+  let n = 0;
+  for (const v of Object.values(obj || {})) {
+    if (typeof v === "string") n += v.length;
+  }
+  return n;
 }
 
 /* ---------- Vinoteket ---------- */
