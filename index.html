@@ -1894,7 +1894,7 @@ pwaByggMask();
 pwaProvaManifestfil();
 
 /* ---------- lagring ---------- */
-const APP_VERSION = "v79";
+const APP_VERSION = "v80";
 
 /* Här skrivs vinlistan in när en offlinekopia byggs. I originalfilen står
    den kvar som null, och då beter sig sidan precis som vanligt. */
@@ -5516,11 +5516,26 @@ $("bkLista").onclick = async ev => {
 let histAllt = [];
 let histVal = "alla";
 
+/**
+ * Räknas händelsen som ett inlägg?
+ *
+ * Ett nytt vin loggas som 'skapad', inte 'in'. Bär det flaskor är det
+ * likafullt en inläggning — annars syns flaskorna i listan men saknas i
+ * summan, och då stämmer inte siffran med vad man gjort.
+ *
+ * Ingående poster räknas aldrig: de beskriver utgångsläget, inte en rörelse.
+ */
+function arInlagg(e){
+  if (!e || e.ingaende) return false;
+  if (e.typ === "in") return true;
+  return e.typ === "skapad" && Number(e.delta) > 0;
+}
+
 const HIST_ORD = {
   in:      { pil:"+",  ord:"Inlagd",     kl:"in" },
   ingaende:{ pil:"▪",  ord:"Fanns i lagret", kl:"ov" },
   ut:      { pil:"−",  ord:"Uttagen",    kl:"ut" },
-  skapad:  { pil:"★",  ord:"Upplagd",    kl:"ov" },
+  skapad:  { pil:"+",  ord:"Nytt vin, inlagt", kl:"in" },
   raderad: { pil:"×",  ord:"Borttagen",  kl:"ov" },
   kod:     { pil:"❯",  ord:"Kod kopplad",kl:"ov" },
   betyg:   { pil:"★",  ord:"Betygsatt",  kl:"ov" },
@@ -5548,7 +5563,7 @@ function histDagnamn(ts){
 function ritaHistorik(){
   const rader = histAllt.filter(e => {
     if (histVal === "alla") return true;
-    if (histVal === "in") return e.typ === "in" && !e.ingaende;
+    if (histVal === "in") return arInlagg(e);
     return e.typ === histVal;
   });
 
@@ -5570,7 +5585,7 @@ function ritaHistorik(){
       dag = namn;
       // Räkna dagens rörelser så rubriken bär information, inte bara datum.
       const dagens = rader.filter(x => histDagnamn(x.ts) === namn);
-      const in_ = dagens.filter(x => x.typ === "in" && !x.ingaende).length;
+      const in_ = dagens.filter(arInlagg).length;
       const utt = dagens.filter(x => x.typ === "ut").length;
       const delar = [];
       if (in_) delar.push(in_ + " in");
@@ -5582,7 +5597,11 @@ function ritaHistorik(){
 
     // En ingående post är inte en skanning utan ett konstaterande, så den
     // ska inte se ut som en riktig inläggning.
-    const m = HIST_ORD[e.ingaende ? "ingaende" : e.typ] || { pil:"·", ord:e.typ, kl:"ov" };
+    let m = HIST_ORD[e.ingaende ? "ingaende" : e.typ] || { pil:"·", ord:e.typ, kl:"ov" };
+    // Ett nytt vin utan flaskor är bara upplagt i registret, inte inlagt.
+    if (e.typ === "skapad" && !(Number(e.delta) > 0)) {
+      m = { pil:"★", ord:"Upplagd", kl:"ov" };
+    }
     const tid = new Date(e.ts).toLocaleTimeString("sv-SE",
       { hour:"2-digit", minute:"2-digit" });
 
@@ -5608,7 +5627,7 @@ function ritaHistorik(){
 function ritaHistSum(){
   const nu = Date.now();
   const manad = histAllt.filter(e => nu - e.ts < 30 * 86400000);
-  const in_ = manad.filter(e => e.typ === "in" && !e.ingaende).length;
+  const in_ = manad.filter(arInlagg).length;
   const utt = manad.filter(e => e.typ === "ut").length;
   $("histSum").innerHTML =
     '<div class="in"><div class="n">' + in_ + '</div><div class="k">in</div></div>'
